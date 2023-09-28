@@ -1,0 +1,14 @@
+numpy==1.21.6
+mpmath==1.1.0
+scipy==1.4.1
+matplotlib==3.2.2
+torch
+cython==0.29.20
+torchvision
+sklearn
+opencv-python==4.2.0.34
+cvxpy==1.1.5
+tqdm==4.64.0
+visdom==0.1.8.9
+progressbar==2.5
+pyyaml>=5.1
