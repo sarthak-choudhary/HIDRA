@@ -46,6 +46,7 @@ from tqdm import tqdm
 from emnist import extract_training_samples
 import time
 import copy
+import os
 
 random.seed(2022)
 np.random.seed(5)
@@ -92,7 +93,8 @@ if __name__ == '__main__':
         # batch_size = len(train_set) // args.nworker
         train_loader = DataLoader(train_set, batch_size=args.batchsize)
         test_loader = DataLoader(torchvision.datasets.MNIST(root='../data', train=False, download=True, transform=transform))
-        mal_train_loaders = DataLoader(MalDataset(MAL_FEATURE_FILE%('mnist'), MAL_TRUE_LABEL_FILE%('mnist'), MAL_TARGET_FILE%('mnist'), transform=transform), batch_size=args.batchsize)
+        # mal_train_loaders = DataLoader(MalDataset(MAL_FEATURE_FILE%('mnist'), MAL_TRUE_LABEL_FILE%('mnist'), MAL_TARGET_FILE%('mnist'), transform=transform), batch_size=args.batchsize)
+        mal_train_loaders = None
 
         network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
         backdoor_network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
@@ -102,8 +104,9 @@ if __name__ == '__main__':
         # batch_size = len(train_set) // args.nworker
         train_loader = DataLoader(train_set, batch_size=args.batchsize)
         test_loader = DataLoader(torchvision.datasets.FashionMNIST(root = "./data", train = False, download = True, transform = torchvision.transforms.ToTensor()))
-        mal_train_loaders = DataLoader(MalDataset(MAL_FEATURE_FILE%('fashion'), MAL_TRUE_LABEL_FILE%('fashion'), MAL_TARGET_FILE%('fashion'), transform=torchvision.transforms.ToTensor()), batch_size=args.batchsize)
+        # mal_train_loaders = DataLoader(MalDataset(MAL_FEATURE_FILE%('fashion'), MAL_TRUE_LABEL_FILE%('fashion'), MAL_TARGET_FILE%('fashion'), transform=torchvision.transforms.ToTensor()), batch_size=args.batchsize)
 
+        mal_train_loaders = None
         network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
         backdoor_network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
     elif args.dataset == 'EMNIST':
@@ -143,6 +146,9 @@ if __name__ == '__main__':
     prev_average_grad = None
 
     print('Malicious node indices:', mal_index, 'Attack Type:', args.attack)
+    
+    if not os.path.exists('./results/'):
+        os.makedirs('./results/')
 
     file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
     
@@ -152,6 +158,12 @@ if __name__ == '__main__':
     # txt_file = open(file_name, 'w') 
 
     if args.attack in ['variance_diff', 'single_direction'] :
+        if not os.path.exists('./variance_results/'):
+            os.makedirs('./variance_results/')
+
+        if not os.path.exists('./corruption_results/'):
+            os.makedirs('./corruption_results/')    
+
         with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "w") as file:
             file.write("Checks dumped here\n")
             file.close()
