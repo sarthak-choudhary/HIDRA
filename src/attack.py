@@ -473,39 +473,46 @@ def attack_variance_diff(grads, corrupted_indices, max_variance):
 
     return grads
 
-def attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate):
+def attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0
     
     eps = num_corruptions / (num_corruptions + num_benign)
 
-    benign_mean = np.mean(grads[benign_indices], axis=0)
-    s = benign_mean / np.linalg.norm(benign_mean)
+    grads = torch.FloatTensor(grads).to(device)
+    benign_mean = torch.mean(grads, dim=0)
 
-    cov = np.cov(grads[benign_indices], rowvar=False, bias=True)
-    benign_variance = np.dot(s, np.dot(cov, s))
-    projected_mean = np.dot(benign_mean, s)
+    s = benign_mean / torch.norm(benign_mean, p=2)
+
+    cov_matrix = torch.cov(grads.T, correction=0)
+    benign_variance = torch.dot(s, torch.mv(cov_matrix, s)).item()
+    # benign_variance = np.dot(s, np.dot(cov, s))
 
     variance_diff = threshold - (benign_variance * (1 - eps))
-    corruption  = np.sqrt(1/((1-eps) * eps)) * np.sqrt(variance_diff)
+    corruption  = np.sqrt(1/eps) * np.sqrt(variance_diff)
+    s = s.cpu().numpy()
+    benign_mean = benign_mean.cpu().numpy()
+    grads = grads.cpu().numpy()
 
     grads[corrupted_indices] = benign_mean - s*corruption
 
-    cov = np.cov(grads, rowvar=False, bias=True)
+    torch.cuda.empty_cache()
 
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    # cov = np.cov(grads, rowvar=False, bias=True)
 
-    sorted_indices = np.argsort(np.abs(eigenvalues))
-    eigenvectors = eigenvectors[:, sorted_indices]
-    var = np.var(np.dot(grads, eigenvectors[:, -1]))
+    # eigenvalues, eigenvectors = np.linalg.eigh(cov)
 
-    if var > 9 * threshold:
-        with open(f"./variance_results/variance_violation_{attack_type}_{dataset}_{learning_rate}.txt", "a") as file:
-            file.write(f"More than 9 times {var}\n")
-            file.close()        
-    elif var > 2 * threshold:
-        with open(f"./variance_results/variance_violation_{attack_type}_{dataset}_{learning_rate}.txt", "a") as file:
-            file.write(f"More than 2 times {var}\n")
-            file.close()
+    # sorted_indices = np.argsort(np.abs(eigenvalues))
+    # eigenvectors = eigenvectors[:, sorted_indices]
+    # var = np.var(np.dot(grads, eigenvectors[:, -1]))
+
+    # if var > 9 * threshold:
+    #     with open(f"./variance_results/variance_violation_{attack_type}_{dataset}_{learning_rate}.txt", "a") as file:
+    #         file.write(f"More than 9 times {var}\n")
+    #         file.close()        
+    # elif var > 2 * threshold:
+    #     with open(f"./variance_results/variance_violation_{attack_type}_{dataset}_{learning_rate}.txt", "a") as file:
+    #         file.write(f"More than 2 times {var}\n")
+    #         file.close()
     
     return grads

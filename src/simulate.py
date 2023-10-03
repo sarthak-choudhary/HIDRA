@@ -36,11 +36,14 @@ import numpy as np
 import random
 from robust_estimator import krum, filterL2, median, trimmed_mean, bulyan, ex_noregret, mom_filterL2, mom_ex_noregret, mom_krum
 import torch
+from torch.autograd import Variable
 from torch import nn, optim
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision
 from torchvision import utils as vutils
+from torchvision import datasets
 import torch.nn.functional as F
+import torchvision.transforms as transforms
 import torchvision.transforms.functional as TF
 from tqdm import tqdm
 from emnist import extract_training_samples
@@ -61,8 +64,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', default='2')
     parser.add_argument('--dataset', default='MNIST')
-    parser.add_argument('--nworker', type=int, default=4000)
-    parser.add_argument('--perround', type=int, default=4000)
+    parser.add_argument('--nworker', type=int, default=100)
+    parser.add_argument('--perround', type=int, default=100)
     parser.add_argument('--localiter', type=int, default=5)
     parser.add_argument('--round', type=int, default=100) 
     parser.add_argument('--lr', type=float, default=1e-2)
@@ -74,7 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--buckets', type=int, default=10)
 
     # Malicious agent setting
-    parser.add_argument('--malnum', type=int, default=800)
+    parser.add_argument('--malnum', type=int, default=20)
     parser.add_argument('--agg', default='average', help='average, ex_noregret, filterl2, krum, median, trimmedmean, bulyankrum, bulyantrimmedmean, bulyanmedian, mom_filterl2, mom_ex_noregret, iclr2022_bucketing, icml2021_history, clustering')
     parser.add_argument('--attack', default='noattack', help="noattack, trimmedmean, krum, backdoor, modelpoisoning, xie")
     args = parser.parse_args()
@@ -121,6 +124,35 @@ if __name__ == '__main__':
 
         network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
         backdoor_network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
+    elif args.dataset == 'CIFAR10':
+        transform_train = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Lambda(lambda x: F.pad(
+                    Variable(x.unsqueeze(0), requires_grad=False),
+                    (4, 4, 4, 4), mode='reflect').data.squeeze()),
+                transforms.ToPILImage(),
+                transforms.RandomCrop(32),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+            ]
+        )
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            ])
+        
+        train_set = datasets.CIFAR10('./data', train=True,
+                              download=True, transform=transform_train)
+        test_set = datasets.CIFAR10('./data', train=False,
+                             download=True, transform=transform)
+        train_loader = DataLoader(train_set, batch_size=args.batchsize)
+        test_loader = DataLoader(test_set)
+
+        # mal_train_loaders = DataLoader(MalDataset(MAL_FEATURE_FILE%('cifar'), MAL_TRUE_LABEL_FILE%('cidar'), MAL_TARGET_FILE%('cifar'), transform=torchvision.transforms.ToTensor()), batch_size=args.batchsize)
+        mal_train_loaders = None
+        network = ConvNet(input_size=32, input_channel=3, classes=10, kernel_size=5, filters1=64, filters2=64, fc_size=384).to(device)
+        backdoor_network = ConvNet(input_size=32, input_channel=3, classes=10, kernel_size=5, filters1=64, filters2=64, fc_size=384).to(device)
     # Split into multiple training set
     local_size = len(train_set) // args.nworker
     sizes = []
@@ -157,20 +189,20 @@ if __name__ == '__main__':
         file.close()
     # txt_file = open(file_name, 'w') 
 
-    if args.attack in ['variance_diff', 'single_direction'] :
-        if not os.path.exists('./variance_results/'):
-            os.makedirs('./variance_results/')
+    # if args.attack in ['variance_diff', 'single_direction'] :
+    #     if not os.path.exists('./variance_results/'):
+    #         os.makedirs('./variance_results/')
 
-        if not os.path.exists('./corruption_results/'):
-            os.makedirs('./corruption_results/')    
+    #     if not os.path.exists('./corruption_results/'):
+    #         os.makedirs('./corruption_results/')    
 
-        with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "w") as file:
-            file.write("Checks dumped here\n")
-            file.close()
+    #     with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "w") as file:
+    #         file.write("Checks dumped here\n")
+    #         file.close()
 
-        with open(f"./corruption_results/corruption_progress_{args.attack}_{args.dataset}_{args.lr}.txt", "w") as file:
-            file.write("max_variance and bias after each instance of corruption\n")
-            file.close()
+    #     with open(f"./corruption_results/corruption_progress_{args.attack}_{args.dataset}_{args.lr}.txt", "w") as file:
+    #         file.write("max_variance and bias after each instance of corruption\n")
+    #         file.close()
     
     for round_idx in range(args.round):
         print("Round: ", round_idx)
@@ -271,14 +303,14 @@ if __name__ == '__main__':
             average_grad.append(np.zeros(p.data.shape))
 
         if args.attack in ['variance_diff', 'single_direction']:
-            with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
-                file.write(f"Round: {round_idx}\n")
-                file.close()
+            # with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
+            #     file.write(f"Round: {round_idx}\n")
+            #     file.close()
 
-            with open(f"corruption_progress_{args.attack}_{args.dataset}.txt", "a") as file:
-                file.write(f"Round: {round_idx}\n")
-                file.close()   
-                print("calculating variances for the attack")
+            # with open(f"corruption_progress_{args.attack}_{args.dataset}.txt", "a") as file:
+            #     file.write(f"Round: {round_idx}\n")
+            #     file.close()   
+            #     print("calculating variances for the attack")
 
             # calculating variances 
             grads = [[] for _ in range(len(local_grads[0]))]
@@ -302,28 +334,43 @@ if __name__ == '__main__':
                     sizes.append(itv)
                 if feature_size % itv:
                     sizes.append(feature_size - cnt * itv)    
-
+                
                 for j in range(len(sizes)):
-                    cov_matrix = np.cov(grads[i][:, idx:idx+itv], rowvar=False, bias=True)
-                    eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+                    partitioned_grads = grads[i][:, idx:idx+itv]
+                    partitioned_grads = torch.FloatTensor(partitioned_grads).to(device)
 
-                    sorted_indices = np.argsort(np.abs(eigenvalues))
-                    eigenvectors = eigenvectors[:, sorted_indices]
-                    max_variance = np.var(np.dot(grads[i][:, idx:idx+itv], eigenvectors[:, -1]))    
-
-                    threshold = max(threshold, max_variance)
+                    cov_matrix = torch.cov(partitioned_grads.T, correction=0)
+                    try:
+                        eigenvalues = torch.linalg.eigvalsh(cov_matrix)
+                        abs_eigenvalues = torch.abs(eigenvalues)
+                    except:
+                        eigenvalues =torch.linalg.eigvals(cov_matrix)
+                        abs_eigenvalues = torch.abs(eigenvalues.real)
+                    
+                    max_variance = torch.max(abs_eigenvalues)
+                    threshold = max(threshold, max_variance.item())
                     idx = idx + itv
+                    
+                    cov_matrix = cov_matrix.cpu()
+                    eigenvalues = eigenvalues.cpu()
+                    partitioned_grads = partitioned_grads.cpu()
 
-            with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
-                file.write(f"Max variance threshold: {threshold}\n")
+                    del cov_matrix 
+                    del eigenvalues
+                    del partitioned_grads
+
+                    torch.cuda.empty_cache()
+
+            # with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
+            #     file.write(f"Max variance threshold: {threshold}\n")
             for i in range(len(grads)):
-                with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
-                    file.write(f"grad layer: {i}\n")
-                    file.close()
+                # with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
+                #     file.write(f"grad layer: {i}\n")
+                #     file.close()
 
-                with open(f"corruption_progress_{args.attack}_{args.dataset}.txt", "a") as file:
-                    file.write(f"grad layer: {i}\n")
-                    file.close()
+                # with open(f"corruption_progress_{args.attack}_{args.dataset}.txt", "a") as file:
+                #     file.write(f"grad layer: {i}\n")
+                #     file.close()
 
                 feature_size = grads[i].shape[1]
                 cnt = int(feature_size // itv)
@@ -339,7 +386,7 @@ if __name__ == '__main__':
                         grads[i][:, idx:idx+itv] = corrupt_grads(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
                         idx = idx + itv
                     elif args.attack == "single_direction":
-                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr)
+                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device)
 
             reshaped_grads = [[] for _ in range(len(grads[0]))]
 
