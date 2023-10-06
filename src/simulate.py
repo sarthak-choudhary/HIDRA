@@ -30,8 +30,8 @@
 
 import argparse
 from attack import attack_krum, attack_trimmedmean, attack_xie, backdoor, mal_single, corrupt_grads, attack_single_direction
-from data import MalDataset
-from networks import ConvNet, EMNISTCNN
+from data import MalDataset, PurchaseDataset
+from networks import ConvNet, EMNISTCNN, FCs
 import numpy as np
 import random
 from robust_estimator import krum, filterL2, median, trimmed_mean, bulyan, ex_noregret, mom_filterL2, mom_ex_noregret, mom_krum
@@ -64,8 +64,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', default='2')
     parser.add_argument('--dataset', default='MNIST')
-    parser.add_argument('--nworker', type=int, default=100)
-    parser.add_argument('--perround', type=int, default=100)
+    parser.add_argument('--nworker', type=int, default=5000)
+    parser.add_argument('--perround', type=int, default=5000)
     parser.add_argument('--localiter', type=int, default=5)
     parser.add_argument('--round', type=int, default=100) 
     parser.add_argument('--lr', type=float, default=1e-2)
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--buckets', type=int, default=10)
 
     # Malicious agent setting
-    parser.add_argument('--malnum', type=int, default=20)
+    parser.add_argument('--malnum', type=int, default=1000)
     parser.add_argument('--agg', default='average', help='average, ex_noregret, filterl2, krum, median, trimmedmean, bulyankrum, bulyantrimmedmean, bulyanmedian, mom_filterl2, mom_ex_noregret, iclr2022_bucketing, icml2021_history, clustering')
     parser.add_argument('--attack', default='noattack', help="noattack, trimmedmean, krum, backdoor, modelpoisoning, xie")
     args = parser.parse_args()
@@ -101,7 +101,6 @@ if __name__ == '__main__':
 
         network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
         backdoor_network = ConvNet(input_size=28, input_channel=1, classes=10, filters1=30, filters2=30, fc_size=200).to(device)
-
     elif args.dataset == 'Fashion-MNIST':
         train_set = torchvision.datasets.FashionMNIST(root = "./data", train = True, download = True, transform = torchvision.transforms.ToTensor())
         # batch_size = len(train_set) // args.nworker
@@ -153,6 +152,19 @@ if __name__ == '__main__':
         mal_train_loaders = None
         network = ConvNet(input_size=32, input_channel=3, classes=10, kernel_size=5, filters1=64, filters2=64, fc_size=384).to(device)
         backdoor_network = ConvNet(input_size=32, input_channel=3, classes=10, kernel_size=5, filters1=64, filters2=64, fc_size=384).to(device)
+    elif args.dataset == 'Purchase':
+        filename = './data/dataset_purchase'
+        dataset = PurchaseDataset(filename)
+        train_set = list(zip(dataset.features[:-10000].float(), dataset.labels[:-10000]))
+        test_set = list(zip(dataset.features[-10000:].float(), dataset.labels[-10000:]))
+
+        train_loader = DataLoader(train_set, batch_size=args.batchsize)
+        test_loader = DataLoader(test_set)
+
+        mal_train_loaders = None
+        network = FCs(in_ch=600, h_ch=512, out_ch=100).to(device)
+        backdoor_network = FCs(in_ch=600, h_ch=512, out_ch=100).to(device)
+        
     # Split into multiple training set
     local_size = len(train_set) // args.nworker
     sizes = []
@@ -359,7 +371,7 @@ if __name__ == '__main__':
                     del eigenvalues
                     del partitioned_grads
 
-                    torch.cuda.empty_cache()
+                    # torch.cuda.empty_cache()
 
             # with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
             #     file.write(f"Max variance threshold: {threshold}\n")

@@ -496,7 +496,7 @@ def attack_single_direction(grads, corrupted_indices, benign_indices, threshold,
 
     grads[corrupted_indices] = benign_mean - s*corruption
 
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
     # cov = np.cov(grads, rowvar=False, bias=True)
 

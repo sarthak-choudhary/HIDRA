@@ -32,11 +32,33 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision
+from torchvision import transforms
 
 MAL_FEATURE_TEMPLATE = '../data/%s_mal_feature_10.npy'
 MAL_TARGET_TEMPLATE = '../data/%s_mal_target_10.npy'
 MAL_TRUE_LABEL_TEMPLATE = '../data/%s_mal_true_label_10.npy'
 
+class PurchaseDataset(Dataset):
+    def __init__(self, filename):
+        self.features =  []
+        self.labels = []
+        with open(filename, 'r') as f:
+            for line in f:
+                line = line.strip()
+                splitted_line = line.split(",")
+                self.labels.append(int(splitted_line[0]) - 1)
+                self.features.append(list(map(int, splitted_line[1:])))
+
+        self.features = torch.tensor(self.features, dtype=torch.float32)
+        self.labels = torch.tensor(self.labels, dtype=torch.int64)
+        self.transform = transforms.Compose([transforms.ToTensor()])    
+
+    def __len__(self):
+        return len(self.features)
+    
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]  
+          
 class MalDataset(Dataset):
     def __init__(self, feature_path, true_label_path, target_path, transform=None):
         self.feature = np.load(feature_path)

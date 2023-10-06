@@ -66,11 +66,10 @@ class FCs(nn.Module):
         self.main = nn.Sequential(
                 nn.Linear(in_ch, h_ch),
                 nn.ReLU(),
-                nn.Linear(h_ch, 100),
+                nn.Linear(h_ch, out_ch),
                 nn.ReLU(),
-                nn.Linear(100, out_ch),
             )
-
+           
     def forward(self, x):
         return self.main(x)
 
