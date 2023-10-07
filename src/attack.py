@@ -473,6 +473,29 @@ def attack_variance_diff(grads, corrupted_indices, max_variance):
 
     return grads
 
+def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold, device):
+    num_corruptions = len(corrupted_indices) * 1.0
+    num_benign = len(benign_indices) * 1.0
+
+    eps = num_corruptions / (num_corruptions + num_benign)
+
+    grads = torch.FloatTensor(grads).to(device)
+    benign_mean = torch.mean(grads[corrupted_indices])
+
+    s = benign_mean / torch.norm(benign_mean, p=2)
+
+    cov_matrix = torch.cov(grads[corrupted_indices].T, correction=0)
+    benign_variance = torch.dot(s, torch.mv(cov_matrix, s)).item()
+
+    variance_diff = threshold - (benign_variance * (1 - eps))
+    corruption  = np.sqrt(1/eps) * np.sqrt(variance_diff)
+    s = s.cpu().numpy()
+    benign_mean = benign_mean.cpu().numpy()
+    grads = grads.cpu().numpy()
+
+    grads[corrupted_indices] = benign_mean - s*corruption
+    return grads
+
 def attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0

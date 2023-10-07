@@ -29,7 +29,7 @@
 '''
 
 import argparse
-from attack import attack_krum, attack_trimmedmean, attack_xie, backdoor, mal_single, corrupt_grads, attack_single_direction
+from attack import attack_krum, attack_trimmedmean, attack_xie, backdoor, mal_single, corrupt_grads, attack_single_direction, partial_attack_single_direction
 from data import MalDataset, PurchaseDataset
 from networks import ConvNet, EMNISTCNN, FCs
 import numpy as np
@@ -410,6 +410,8 @@ if __name__ == '__main__':
                         idx = idx + itv
                     elif args.attack == "single_direction":
                         grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device)
+                    elif args.attack == "partial_single_direction":
+                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device)
 
             reshaped_grads = [[] for _ in range(len(grads[0]))]
 
