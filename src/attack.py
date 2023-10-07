@@ -473,7 +473,7 @@ def attack_variance_diff(grads, corrupted_indices, max_variance):
 
     return grads
 
-def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold, device):
+def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0
 
