@@ -480,7 +480,7 @@ def partial_attack_single_direction(grads, corrupted_indices, benign_indices, th
     eps = num_corruptions / (num_corruptions + num_benign)
 
     grads = torch.FloatTensor(grads).to(device)
-    benign_mean = torch.mean(grads[corrupted_indices])
+    benign_mean = torch.mean(grads[corrupted_indices], dim=0)
 
     s = benign_mean / torch.norm(benign_mean, p=2)
 
