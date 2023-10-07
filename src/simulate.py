@@ -325,7 +325,7 @@ if __name__ == '__main__':
         for p in list(network.parameters()):
             average_grad.append(np.zeros(p.data.shape))
 
-        if args.attack in ['variance_diff', 'single_direction']:
+        if args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
             # with open(f"./variance_results/variance_violation_{args.attack}_{args.dataset}_{args.lr}.txt", "a") as file:
             #     file.write(f"Round: {round_idx}\n")
             #     file.close()
