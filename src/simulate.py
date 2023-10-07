@@ -64,8 +64,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', default='2')
     parser.add_argument('--dataset', default='MNIST')
-    parser.add_argument('--nworker', type=int, default=5000)
-    parser.add_argument('--perround', type=int, default=5000)
+    parser.add_argument('--nworker', type=int, default=1000)
+    parser.add_argument('--perround', type=int, default=1000)
     parser.add_argument('--localiter', type=int, default=5)
     parser.add_argument('--round', type=int, default=100) 
     parser.add_argument('--lr', type=float, default=1e-2)
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--buckets', type=int, default=10)
 
     # Malicious agent setting
-    parser.add_argument('--malnum', type=int, default=1000)
+    parser.add_argument('--malnum', type=int, default=200)
     parser.add_argument('--agg', default='average', help='average, ex_noregret, filterl2, krum, median, trimmedmean, bulyankrum, bulyantrimmedmean, bulyanmedian, mom_filterl2, mom_ex_noregret, iclr2022_bucketing, icml2021_history, clustering')
     parser.add_argument('--attack', default='noattack', help="noattack, trimmedmean, krum, backdoor, modelpoisoning, xie")
     args = parser.parse_args()
@@ -164,7 +164,18 @@ if __name__ == '__main__':
         mal_train_loaders = None
         network = FCs(in_ch=600, h_ch=512, out_ch=100).to(device)
         backdoor_network = FCs(in_ch=600, h_ch=512, out_ch=100).to(device)
-        
+    elif args.dataset == "SVHN":
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        train_set = datasets.SVHN(root='./data', split='train', download=True, transform=transform)
+        test_set = datasets.SVHN(root='./data', split='test', download=True, transform=transform)
+
+        train_loader = DataLoader(train_set, batch_size=args.batchsize)
+        test_loader = DataLoader(test_set)
+
+        mal_train_loaders = None
+        network = ConvNet(input_size=32, input_channel=3, classes=10, kernel_size=5, filters1=64, filters2=64, fc_size=384).to(device)
+        backdoor_network = ConvNet(input_size=32, input_channel=3, classes=10, kernel_size=5, filters1=64, filters2=64, fc_size=384).to(device)
+
     # Split into multiple training set
     local_size = len(train_set) // args.nworker
     sizes = []
