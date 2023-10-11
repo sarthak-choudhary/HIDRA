@@ -473,7 +473,7 @@ def attack_variance_diff(grads, corrupted_indices, max_variance):
 
     return grads
 
-def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device):
+def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device, checkpoint_file_name):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0
 
@@ -487,8 +487,8 @@ def partial_attack_single_direction(grads, corrupted_indices, benign_indices, th
     cov_matrix = torch.cov(grads[corrupted_indices].T, correction=0)
     benign_variance = torch.dot(s, torch.mv(cov_matrix, s)).item()
 
-    variance_diff = threshold - (benign_variance * (1 - eps))
-    corruption  = np.sqrt(1/eps) * np.sqrt(variance_diff)
+    variance_diff = 2 * threshold - benign_variance
+    corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
     s = s.cpu().numpy()
     benign_mean = benign_mean.cpu().numpy()
     grads = grads.cpu().numpy()
@@ -496,7 +496,7 @@ def partial_attack_single_direction(grads, corrupted_indices, benign_indices, th
     grads[corrupted_indices] = benign_mean - s*corruption
     return grads
 
-def attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device):
+def attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device, checkpoint_file_name):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0
     
@@ -509,33 +509,17 @@ def attack_single_direction(grads, corrupted_indices, benign_indices, threshold,
 
     cov_matrix = torch.cov(grads.T, correction=0)
     benign_variance = torch.dot(s, torch.mv(cov_matrix, s)).item()
-    # benign_variance = np.dot(s, np.dot(cov, s))
 
-    variance_diff = threshold - (benign_variance * (1 - eps))
-    corruption  = np.sqrt(1/eps) * np.sqrt(variance_diff)
+    with open(checkpoint_file_name, "a+") as file:
+        file.write(f"{threshold}, {benign_variance}, diff: {2* threshold - benign_variance}\n")
+        file.close()
+
+    variance_diff = max(2 * threshold - benign_variance, 0)
+    corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
     s = s.cpu().numpy()
     benign_mean = benign_mean.cpu().numpy()
     grads = grads.cpu().numpy()
 
     grads[corrupted_indices] = benign_mean - s*corruption
-
-    # torch.cuda.empty_cache()
-
-    # cov = np.cov(grads, rowvar=False, bias=True)
-
-    # eigenvalues, eigenvectors = np.linalg.eigh(cov)
-
-    # sorted_indices = np.argsort(np.abs(eigenvalues))
-    # eigenvectors = eigenvectors[:, sorted_indices]
-    # var = np.var(np.dot(grads, eigenvectors[:, -1]))
-
-    # if var > 9 * threshold:
-    #     with open(f"./variance_results/variance_violation_{attack_type}_{dataset}_{learning_rate}.txt", "a") as file:
-    #         file.write(f"More than 9 times {var}\n")
-    #         file.close()        
-    # elif var > 2 * threshold:
-    #     with open(f"./variance_results/variance_violation_{attack_type}_{dataset}_{learning_rate}.txt", "a") as file:
-    #         file.write(f"More than 2 times {var}\n")
-    #         file.close()
     
     return grads

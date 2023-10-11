@@ -33,6 +33,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision
 from torchvision import transforms
+from PIL import Image
+import os
 
 MAL_FEATURE_TEMPLATE = '../data/%s_mal_feature_10.npy'
 MAL_TARGET_TEMPLATE = '../data/%s_mal_target_10.npy'
@@ -58,7 +60,40 @@ class PurchaseDataset(Dataset):
     
     def __getitem__(self, idx):
         return self.features[idx], self.labels[idx]  
-          
+
+class MITIndoorDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.images_paths = []
+        self.labels = []
+
+        # Load images paths and labels
+
+        for label, class_dir in enumerate(os.listdir(root_dir)):
+            class_path = os.path.join(root_dir, class_dir)
+            if os.path.isdir(class_path):
+                for image_file in os.listdir(class_path):
+                    self.images_paths.append(os.path.join(class_path, image_file))
+                    self.labels.append(label)
+
+    def __len__(self):
+        return len(self.images_paths)
+        
+    def __getitem__(self, idx):
+        image = Image.open(self.images_paths[idx])
+
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        image = image.resize((224, 224), Image.ANTIALIAS)
+
+        label = self.labels[idx]
+        if self.transform:
+            image = self.transform(image)
+        
+        return image, label
+        
 class MalDataset(Dataset):
     def __init__(self, feature_path, true_label_path, target_path, transform=None):
         self.feature = np.load(feature_path)

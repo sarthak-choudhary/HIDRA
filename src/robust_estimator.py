@@ -35,6 +35,7 @@ from numpy.random import multivariate_normal
 from scipy.linalg import eigh
 from scipy.special import rel_entr
 from sklearn.preprocessing import normalize
+import torch
 
 MAX_ITER = 100
 ITV = 1000
@@ -141,7 +142,7 @@ def mom_ex_noregret(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, delta=np.e
         bucketed_samples.append(np.mean(samples[i*bucket_size:min((i+1)*bucket_size, len(samples))], axis=0))
     return ex_noregret(bucketed_samples, eps, sigma, expansion, itv)
 
-def filterL2_(samples, eps=0.2, sigma=1, expansion=20):
+def filterL2_(samples, eps=0.2, sigma=1, expansion=2):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -151,33 +152,52 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=20):
 
     samples_ = samples.reshape(size, 1, feature_size)
 
-    c = np.ones(size)
+    c = torch.ones(size)
+    
     for i in range(2 * int(eps * size)):
         # print(i)
-        avg = np.average(samples, axis=0, weights=c)
-        cov = np.average(np.array([np.matmul((sample - avg).T, (sample - avg)) for sample in samples_]), axis=0, weights=c)
-        eig_val, eig_vec = eigh(cov, eigvals=(feature_size-1, feature_size-1), eigvals_only=False)
-        eig_val = eig_val[0]
-        eig_vec = eig_vec.T[0]
+        # avg = np.average(samples, axis=0, weights=c)
+        # cov = np.average(np.array([np.matmul((sample - avg).T, (sample - avg)) for sample in samples_]), axis=0, weights=c)
+        # eig_val, eig_vec = eigh(cov, eigvals=(feature_size-1, feature_size-1), eigvals_only=False)
+        # eig_val = eig_val[0]
+        # eig_vec = eig_vec.T[0]
+        avg = torch.mean(samples, dim=0)
+        cov = torch.cov(samples.T, correction=0)
 
-        if eig_val * eig_val <= expansion * sigma * sigma:
-            return avg
+        try:
+            eigenvalues, eigenvectors = torch.linalg.eigh(cov, eigenvectors=True)
+        except:
+            eigenvalues, eigenvectors = torch.linalg.eig(cov)
+            eigenvalues = eigenvalues.real
+            eigenvectors = eigenvectors.real
         
-        tau = np.array([np.inner(sample-avg, eig_vec)**2 for sample in samples])
-        tau_max_idx = np.argmax(tau)
+        eig_val = eigenvalues[0]
+        eig_vec = eigenvectors[:, 0]
+        
+        # avg = avg.cpu().numpy()
+        # samples = samples.cpu().numpy()
+        # eig_vec = eig_vec.cpu().numpy()
+
+        if eig_val.item() <= expansion * sigma :
+            return avg.cpu().numpy()
+        
+        tau = torch.tensor([torch.dot(sample - avg, eig_vec).pow(2) for sample in samples])
+        tau_max_idx = torch.argmax(tau)
         tau_max = tau[tau_max_idx]
         c = c * (1 - tau/tau_max)
 
-        samples = np.concatenate((samples[:tau_max_idx], samples[tau_max_idx+1:]))
+        samples = torch.cat((samples[:tau_max_idx], samples[tau_max_idx + 1:]))
         samples_ = samples.reshape(-1, 1, feature_size)
-        c = np.concatenate((c[:tau_max_idx], c[tau_max_idx+1:]))
-        c = c / np.linalg.norm(c, ord=1)
+        c = torch.cat((c[:tau_max_idx], c[tau_max_idx + 1:]))
+        c = c / c.norm(p=1)
 
+    samples = samples.cpu().numpy()
+    c = c.cpu().numpy()
     avg = np.average(samples, axis=0, weights=c)
     return avg
 
  
-def filterL2(samples, eps=0.2, sigma=1, expansion=200, itv=ITV):
+def filterL2(samples, eps=0.2, sigma=1, expansion=2, itv=ITV, thresholds=None, device="cpu"):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -201,9 +221,14 @@ def filterL2(samples, eps=0.2, sigma=1, expansion=200, itv=ITV):
 
     idx = 0
     res = []
-    for size in sizes:
-        res.append(filterL2_(samples_flatten[:,idx:idx+size], eps, sigma, expansion))
-        idx += size
+    
+    for i in range(len(sizes)):
+        partitioned_samples = torch.FloatTensor(samples_flatten[:,idx:idx+sizes[i]]).to(device)
+
+        res.append(filterL2_(partitioned_samples, eps, thresholds[i], expansion))
+        idx += sizes[i]
+
+        partitioned_samples = partitioned_samples.cpu()
 
     return np.concatenate(res, axis=0).reshape(feature_shape)
 
