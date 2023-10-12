@@ -142,7 +142,7 @@ def mom_ex_noregret(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, delta=np.e
         bucketed_samples.append(np.mean(samples[i*bucket_size:min((i+1)*bucket_size, len(samples))], axis=0))
     return ex_noregret(bucketed_samples, eps, sigma, expansion, itv)
 
-def filterL2_(samples, eps=0.2, sigma=1, expansion=2):
+def filterL2_(samples, eps=0.2, sigma=1, expansion=2, file_name=None):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -153,7 +153,7 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=2):
     samples_ = samples.reshape(size, 1, feature_size)
 
     c = torch.ones(size)
-    
+    points_removed = []
     for i in range(2 * int(eps * size)):
         # print(i)
         # avg = np.average(samples, axis=0, weights=c)
@@ -171,7 +171,7 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=2):
             eigenvalues = eigenvalues.real
             eigenvectors = eigenvectors.real
         
-        eig_val = eigenvalues[0]
+        eig_val = torch.abs(eigenvalues[0])
         eig_vec = eigenvectors[:, 0]
         
         # avg = avg.cpu().numpy()
@@ -179,10 +179,15 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=2):
         # eig_vec = eig_vec.cpu().numpy()
 
         if eig_val.item() <= expansion * sigma :
+            if points_removed:
+                with open(file_name, "a+") as file:
+                    file.write(f"{points_removed}\n")
+                    file.close()
             return avg.cpu().numpy()
         
         tau = torch.tensor([torch.dot(sample - avg, eig_vec).pow(2) for sample in samples])
         tau_max_idx = torch.argmax(tau)
+        points_removed.append(int(tau_max_idx.item()))
         tau_max = tau[tau_max_idx]
         c = c * (1 - tau/tau_max)
 
@@ -193,11 +198,16 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=2):
 
     samples = samples.cpu().numpy()
     c = c.cpu().numpy()
+    
+    with open(file_name, "a+") as file:
+        file.write(f"{points_removed}\n")
+        file.close()
+
     avg = np.average(samples, axis=0, weights=c)
     return avg
 
  
-def filterL2(samples, eps=0.2, sigma=1, expansion=2, itv=ITV, thresholds=None, device="cpu"):
+def filterL2(samples, eps=0.2, sigma=1, expansion=2, itv=ITV, thresholds=None, device="cpu", file_name = None):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -223,9 +233,9 @@ def filterL2(samples, eps=0.2, sigma=1, expansion=2, itv=ITV, thresholds=None, d
     res = []
     
     for i in range(len(sizes)):
-        partitioned_samples = torch.FloatTensor(samples_flatten[:,idx:idx+sizes[i]]).to(device)
+        partitioned_samples = torch.tensor(samples_flatten[:,idx:idx+sizes[i]], dtype=torch.float64).to(device)
 
-        res.append(filterL2_(partitioned_samples, eps, thresholds[i], expansion))
+        res.append(filterL2_(partitioned_samples, eps, thresholds[i], expansion, file_name))
         idx += sizes[i]
 
         partitioned_samples = partitioned_samples.cpu()

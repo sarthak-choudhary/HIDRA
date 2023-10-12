@@ -31,7 +31,7 @@
 import argparse
 from attack import attack_krum, attack_trimmedmean, attack_xie, backdoor, mal_single, corrupt_grads, attack_single_direction, partial_attack_single_direction
 from data import MalDataset, PurchaseDataset, MITIndoorDataset
-from networks import ConvNet, EMNISTCNN, FCs, GCNN
+from networks import ConvNet, EMNISTCNN, FCs
 import numpy as np
 import random
 from robust_estimator import krum, filterL2, median, trimmed_mean, bulyan, ex_noregret, mom_filterL2, mom_ex_noregret, mom_krum
@@ -54,6 +54,7 @@ import os
 random.seed(2022)
 np.random.seed(5)
 torch.manual_seed(11)
+torch.set_default_dtype(torch.float64)
 
 MAL_FEATURE_FILE = './data/%s_mal_feature_10.npy'
 MAL_TARGET_FILE = './data/%s_mal_target_10.npy'
@@ -285,8 +286,12 @@ if __name__ == '__main__':
     if not os.path.exists('./variance_checkpoints/'):
         os.makedirs('./variance_checkpoints/')
 
+    if not os.path.exists('./outlier_removal_checkpoints/'):
+        os.makedirs('./outlier_removal_checkpoints/')
+
     file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
     checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
+    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
     with open(file_name, "w") as file:
         file.write(f"Results : Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
         file.close()
@@ -294,10 +299,20 @@ if __name__ == '__main__':
     with open(checkpoint_file_name, "w") as file:
         file.write(f"Variance Checkpoints (max, s) : Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
         file.close()
+
+    if args.agg in ['ex_noregret', 'filterl2']:
+        with open(outlier_file_name, "w") as file:
+            file.write(f"Outlier removal results: Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
+            file.close()
+
     for round_idx in range(args.round):
         print("Round: ", round_idx)
         
         with open(checkpoint_file_name, "a+") as file:
+            file.write(f"Round: {round_idx}\n")
+            file.close()
+
+        with open(outlier_file_name, "a+") as file:
             file.write(f"Round: {round_idx}\n")
             file.close()
 
@@ -413,6 +428,7 @@ if __name__ == '__main__':
                 cnt = int(feature_size // itv)
                 idx = 0
                 sizes = []
+                threshold_layer = []
                 for _ in range(cnt):
                     sizes.append(itv)
                 if feature_size % itv:
@@ -420,7 +436,7 @@ if __name__ == '__main__':
                 
                 for j in range(len(sizes)):
                     partitioned_grads = grads[i][:, idx:idx+itv]
-                    partitioned_grads = torch.FloatTensor(partitioned_grads).to(device)
+                    partitioned_grads = torch.tensor(partitioned_grads, dtype=torch.float64).to(device)
 
                     cov_matrix = torch.cov(partitioned_grads.T, correction=0)
                     try:
@@ -431,7 +447,9 @@ if __name__ == '__main__':
                         abs_eigenvalues = torch.abs(eigenvalues.real)
                     
                     max_variance = torch.max(abs_eigenvalues)
-                    thresholds.append(max_variance.item())
+
+                    threshold_layer.append(max_variance.item())
+
                     idx = idx + itv
                     
                     cov_matrix = cov_matrix.cpu()
@@ -441,6 +459,8 @@ if __name__ == '__main__':
                     del cov_matrix 
                     del eigenvalues
                     del partitioned_grads
+
+                thresholds.append(threshold_layer)
 
         if args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
             for i in range(len(grads)):
@@ -455,12 +475,12 @@ if __name__ == '__main__':
 
                 for j in range(len(sizes)):
                     if args.attack == "variance_diff":
-                        grads[i][:, idx:idx+itv] = corrupt_grads(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[j])
+                        grads[i][:, idx:idx+itv] = corrupt_grads(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[i][j])
                         idx = idx + itv
                     elif args.attack == "single_direction":
-                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[j], args.attack, args.dataset, args.lr, device, checkpoint_file_name)
+                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[i][j], args.attack, args.dataset, args.lr, device, checkpoint_file_name)
                     elif args.attack == "partial_single_direction":
-                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[j], args.attack, args.dataset, args.lr, device, checkpoint_file_name)
+                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[i][j], args.attack, args.dataset, args.lr, device, checkpoint_file_name)
 
             reshaped_grads = [[] for _ in range(len(grads[0]))]
 
@@ -495,7 +515,7 @@ if __name__ == '__main__':
                 filterl2_local = []
                 for c in choices:
                     filterl2_local.append(local_grads[c][idx])
-                average_grad[idx] = filterL2(filterl2_local, eps=args.malnum*1./args.nworker, sigma=args.sigma, thresholds=thresholds, device=device)
+                average_grad[idx] = filterL2(filterl2_local, eps=args.malnum*1./args.nworker, sigma=args.sigma, thresholds=thresholds[idx], device=device, file_name=outlier_file_name)
             # print('filterl2 running time: ', time.time()-s)
         elif args.agg == 'mom_filterl2':
             print('agg: mom_filterl2')

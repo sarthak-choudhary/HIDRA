@@ -32,8 +32,8 @@ import numpy as np
 import torch
 from torch import nn, optim, hub
 import torch.nn.functional as F
-from groupy.gconv.pytorch_gconv.splitgconv2d import P4ConvZ2, P4ConvP4
-from groupy.gconv.pytorch_gconv.pooling import plane_group_spatial_max_pooling
+# from groupy.gconv.pytorch_gconv.splitgconv2d import P4ConvZ2, P4ConvP4
+# from groupy.gconv.pytorch_gconv.pooling import plane_group_spatial_max_pooling
 
 class ConvNet(nn.Module):
 
@@ -100,33 +100,33 @@ class EMNISTCNN(nn.Module):
         x = self.fcon2(x)
         return x
 
-class GCNN(nn.Module):
-    def __init__(self):
-        super(GCNN, self).__init__()
-        self.conv1 = P4ConvZ2(3, 32, kernel_size=5)
-        self.conv2 = P4ConvP4(32, 32, kernel_size=5)
-        self.conv3 = P4ConvP4(32, 32, kernel_size=5)
-        self.conv4 = P4ConvP4(32, 32, kernel_size=5)
-        self.conv5 = P4ConvP4(32, 32, kernel_size=5)
-        self.conv6 = P4ConvP4(32, 32, kernel_size=5)
-        self.fc1 = nn.Linear(32 * 5 * 5 * 4, 512)
-        self.fc2 = nn.Linear(512, 2)
+# class GCNN(nn.Module):
+#     def __init__(self):
+#         super(GCNN, self).__init__()
+#         self.conv1 = P4ConvZ2(3, 32, kernel_size=5)
+#         self.conv2 = P4ConvP4(32, 32, kernel_size=5)
+#         self.conv3 = P4ConvP4(32, 32, kernel_size=5)
+#         self.conv4 = P4ConvP4(32, 32, kernel_size=5)
+#         self.conv5 = P4ConvP4(32, 32, kernel_size=5)
+#         self.conv6 = P4ConvP4(32, 32, kernel_size=5)
+#         self.fc1 = nn.Linear(32 * 5 * 5 * 4, 512)
+#         self.fc2 = nn.Linear(512, 2)
 
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = plane_group_spatial_max_pooling(x, 2, 2)  # Assuming you have the pooling function
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
-        x = plane_group_spatial_max_pooling(x, 2, 2)  # Assuming you have the pooling function
-        x = F.relu(self.conv5(x))
-        x = F.relu(self.conv6(x))
-        x = plane_group_spatial_max_pooling(x, 2, 2)  # Assuming you have the pooling function
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+#     def forward(self, x):
+#         x = F.relu(self.conv1(x))
+#         x = F.relu(self.conv2(x))
+#         x = plane_group_spatial_max_pooling(x, 2, 2)  # Assuming you have the pooling function
+#         x = F.relu(self.conv3(x))
+#         x = F.relu(self.conv4(x))
+#         x = plane_group_spatial_max_pooling(x, 2, 2)  # Assuming you have the pooling function
+#         x = F.relu(self.conv5(x))
+#         x = F.relu(self.conv6(x))
+#         x = plane_group_spatial_max_pooling(x, 2, 2)  # Assuming you have the pooling function
+#         x = x.view(x.size(0), -1)
+#         x = F.relu(self.fc1(x))
+#         x = F.dropout(x, training=self.training)
+#         x = self.fc2(x)
+#         return F.log_softmax(x, dim=1)
         
 class NewFCs(nn.Module):
     def __init__(self, in_ch, out_ch, h_ch=1000):
