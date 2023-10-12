@@ -316,7 +316,7 @@ if __name__ == '__main__':
             file.write(f"Round: {round_idx}\n")
             file.close()
 
-        choices = np.random.choice(args.nworker, args.perround, replace=False)
+        choices = np.arange(args.nworker)
         if args.attack == 'modelpoisoning':
             dynamic_mal_index = np.random.choice(choices, args.malnum, replace=False)
 
@@ -379,38 +379,6 @@ if __name__ == '__main__':
                 for idx, p in enumerate(list(network.parameters())):
                     p.copy_(params_copy[idx])
 
-        if args.attack == 'modelpoisoning':
-            average_grad = []
-
-            for p in list(network.parameters()):
-                average_grad.append(np.zeros(p.data.shape))
-
-            for c in choices:
-                if c not in mal_index:
-                    for idx, p in enumerate(average_grad):
-                        average_grad[idx] = p + local_grads[c][idx] / args.perround
-
-            np.save('./checkpoints/' + args.agg + 'ben_delta_t%s.npy' % round_idx, average_grad)
-
-        # TODO: choices are not passed in as arguments, will the following two attacks deal with sub-sampled FL correctly?
-        elif args.attack == 'trimmedmean':
-            print('attack trimmedmean')
-            local_grads = attack_trimmedmean(network, local_grads, mal_index, b=1.5)
-
-        elif args.attack == 'krum':
-            print('attack krum')
-            for idx, _ in enumerate(local_grads[0]):
-                local_grads = attack_krum(network, local_grads, mal_index, idx)
-
-        elif args.attack == 'xie':
-            print('attack Xie et al.')
-            local_grads = attack_xie(local_grads, 1, choices, mal_index)
-
-        # aggregation
-        average_grad = []
-        for p in list(network.parameters()):
-            average_grad.append(np.zeros(p.data.shape))
-
         grads = [[] for _ in range(len(local_grads[0]))]
             
         for i in range(len(local_grads[0])):
@@ -462,6 +430,34 @@ if __name__ == '__main__':
 
                 thresholds.append(threshold_layer)
 
+        if args.attack == 'modelpoisoning':
+            average_grad = []
+
+            for p in list(network.parameters()):
+                average_grad.append(np.zeros(p.data.shape))
+
+            for c in choices:
+                if c not in mal_index:
+                    for idx, p in enumerate(average_grad):
+                        average_grad[idx] = p + local_grads[c][idx] / args.perround
+
+            np.save('./checkpoints/' + args.agg + 'ben_delta_t%s.npy' % round_idx, average_grad)
+
+        # TODO: choices are not passed in as arguments, will the following two attacks deal with sub-sampled FL correctly?
+        elif args.attack == 'trimmedmean':
+            print('attack trimmedmean')
+            local_grads = attack_trimmedmean(network, local_grads, mal_index, b=1.5)
+
+        elif args.attack == 'krum':
+            print('attack krum')
+            for idx, _ in enumerate(local_grads[0]):
+                local_grads = attack_krum(network, local_grads, mal_index, idx)
+
+        elif args.attack == 'xie':
+            print('attack Xie et al.')
+            local_grads = attack_xie(local_grads, 1, choices, mal_index)
+
+
         if args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
             for i in range(len(grads)):
                 feature_size = grads[i].shape[1]
@@ -489,6 +485,11 @@ if __name__ == '__main__':
                     reshaped_grads[j].append(grads[i][j].reshape(local_grads[j][i].shape))
             
             local_grads = reshaped_grads
+
+        # aggregation
+        average_grad = []
+        for p in list(network.parameters()):
+            average_grad.append(np.zeros(p.data.shape))
         if args.agg == 'average':
             print('agg: average')
             s = time.time()
