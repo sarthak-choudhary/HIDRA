@@ -290,9 +290,9 @@ if __name__ == '__main__':
     if not os.path.exists('./outlier_removal_checkpoints/'):
         os.makedirs('./outlier_removal_checkpoints/')
 
-    file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + 'adap_thres' if args.adaptive_threshold else '' + '.txt'
-    checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + 'adap_thres' if args.adaptive_threshold else '' + '.txt'
-    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + 'adap_thres' if args.adaptive_threshold else '' + '.txt'
+    file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('adap_thres' if args.adaptive_threshold else '') + '.txt'
+    checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('adap_thres' if args.adaptive_threshold else '') + '.txt'
+    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('adap_thres' if args.adaptive_threshold else '') + '.txt'
     with open(file_name, "w") as file:
         file.write(f"Results : Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
         file.close()
@@ -405,29 +405,13 @@ if __name__ == '__main__':
                     
                     for j in range(len(sizes)):
                         partitioned_grads = grads[i][:, idx:idx+itv]
-                        partitioned_grads = torch.tensor(partitioned_grads, dtype=torch.float64).to(device)
-
-                        cov_matrix = torch.cov(partitioned_grads.T, correction=0)
-                        try:
-                            eigenvalues = torch.linalg.eigvalsh(cov_matrix)
-                            abs_eigenvalues = torch.abs(eigenvalues)
-                        except:
-                            eigenvalues =torch.linalg.eigvals(cov_matrix)
-                            abs_eigenvalues = torch.abs(eigenvalues.real)
-                        
-                        max_variance = torch.max(abs_eigenvalues)
-
-                        threshold_layer.append(max_variance.item())
+                        cov = np.cov(partitioned_grads, rowvar=False, bias=True)
+                        eigenvalues, _ = np.linalg.eigh(cov)
+                                                
+                        max_variance = np.max(np.abs(eigenvalues))
+                        threshold_layer.append(max_variance)
 
                         idx = idx + itv
-                        
-                        cov_matrix = cov_matrix.cpu()
-                        eigenvalues = eigenvalues.cpu()
-                        partitioned_grads = partitioned_grads.cpu()
-
-                        del cov_matrix 
-                        del eigenvalues
-                        del partitioned_grads
 
                     thresholds.append(threshold_layer)
 
