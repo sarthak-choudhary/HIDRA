@@ -65,20 +65,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', default='1')
     parser.add_argument('--dataset', default='MNIST')
-    parser.add_argument('--nworker', type=int, default=1000)
-    parser.add_argument('--perround', type=int, default=1000)
+    parser.add_argument('--nworker', type=int, default=100)
+    parser.add_argument('--perround', type=int, default=100)
     parser.add_argument('--localiter', type=int, default=5)
     parser.add_argument('--round', type=int, default=100) 
-    parser.add_argument('--lr', type=float, default=1e-2)
+    parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--checkpoint', type=int, default=1)
-    parser.add_argument('--sigma', type=float, default=1e-4)
+    parser.add_argument('--sigma', type=float, default=1e-5)
     parser.add_argument('--batchsize', type=int, default=50)
     parser.add_argument('--beta', type=float, default=0.9)
     parser.add_argument('--tau', type=float, default=10.)
     parser.add_argument('--buckets', type=int, default=10)
+    parser.add_argument('--adaptive_threshold', action='store_true', help="Enabale adaptive threshold")
 
     # Malicious agent setting
-    parser.add_argument('--malnum', type=int, default=200)
+    parser.add_argument('--malnum', type=int, default=20)
     parser.add_argument('--agg', default='average', help='average, ex_noregret, filterl2, krum, median, trimmedmean, bulyankrum, bulyantrimmedmean, bulyanmedian, mom_filterl2, mom_ex_noregret, iclr2022_bucketing, icml2021_history, clustering')
     parser.add_argument('--attack', default='noattack', help="noattack, trimmedmean, krum, backdoor, modelpoisoning, xie")
     args = parser.parse_args()
@@ -289,9 +290,9 @@ if __name__ == '__main__':
     if not os.path.exists('./outlier_removal_checkpoints/'):
         os.makedirs('./outlier_removal_checkpoints/')
 
-    file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
-    checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
-    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + '.txt'
+    file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + 'adap_thres' if args.adaptive_threshold else '' + '.txt'
+    checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + 'adap_thres' if args.adaptive_threshold else '' + '.txt'
+    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + 'adap_thres' if args.adaptive_threshold else '' + '.txt'
     with open(file_name, "w") as file:
         file.write(f"Results : Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
         file.close()
@@ -300,10 +301,9 @@ if __name__ == '__main__':
         file.write(f"Variance Checkpoints (max, s) : Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
         file.close()
 
-    if args.agg in ['ex_noregret', 'filterl2']:
-        with open(outlier_file_name, "w") as file:
-            file.write(f"Outlier removal results: Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
-            file.close()
+    with open(outlier_file_name, "w") as file:
+        file.write(f"Outlier removal results: Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
+        file.close()
 
     for round_idx in range(args.round):
         print("Round: ", round_idx)
@@ -389,46 +389,47 @@ if __name__ == '__main__':
         
         itv = 1000
         
-        thresholds = []
-        if args.agg in ['ex_noregret', 'filterl2'] or args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
-            for i in range(len(grads)):
-                feature_size = grads[i].shape[1]
-                cnt = int(feature_size // itv)
-                idx = 0
-                sizes = []
-                threshold_layer = []
-                for _ in range(cnt):
-                    sizes.append(itv)
-                if feature_size % itv:
-                    sizes.append(feature_size - cnt * itv)    
-                
-                for j in range(len(sizes)):
-                    partitioned_grads = grads[i][:, idx:idx+itv]
-                    partitioned_grads = torch.tensor(partitioned_grads, dtype=torch.float64).to(device)
-
-                    cov_matrix = torch.cov(partitioned_grads.T, correction=0)
-                    try:
-                        eigenvalues = torch.linalg.eigvalsh(cov_matrix)
-                        abs_eigenvalues = torch.abs(eigenvalues)
-                    except:
-                        eigenvalues =torch.linalg.eigvals(cov_matrix)
-                        abs_eigenvalues = torch.abs(eigenvalues.real)
+        if args.adaptive_threshold:
+            thresholds = []
+            if args.agg in ['ex_noregret', 'filterl2'] or args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
+                for i in range(len(grads)):
+                    feature_size = grads[i].shape[1]
+                    cnt = int(feature_size // itv)
+                    idx = 0
+                    sizes = []
+                    threshold_layer = []
+                    for _ in range(cnt):
+                        sizes.append(itv)
+                    if feature_size % itv:
+                        sizes.append(feature_size - cnt * itv)    
                     
-                    max_variance = torch.max(abs_eigenvalues)
+                    for j in range(len(sizes)):
+                        partitioned_grads = grads[i][:, idx:idx+itv]
+                        partitioned_grads = torch.tensor(partitioned_grads, dtype=torch.float64).to(device)
 
-                    threshold_layer.append(max_variance.item())
+                        cov_matrix = torch.cov(partitioned_grads.T, correction=0)
+                        try:
+                            eigenvalues = torch.linalg.eigvalsh(cov_matrix)
+                            abs_eigenvalues = torch.abs(eigenvalues)
+                        except:
+                            eigenvalues =torch.linalg.eigvals(cov_matrix)
+                            abs_eigenvalues = torch.abs(eigenvalues.real)
+                        
+                        max_variance = torch.max(abs_eigenvalues)
 
-                    idx = idx + itv
-                    
-                    cov_matrix = cov_matrix.cpu()
-                    eigenvalues = eigenvalues.cpu()
-                    partitioned_grads = partitioned_grads.cpu()
+                        threshold_layer.append(max_variance.item())
 
-                    del cov_matrix 
-                    del eigenvalues
-                    del partitioned_grads
+                        idx = idx + itv
+                        
+                        cov_matrix = cov_matrix.cpu()
+                        eigenvalues = eigenvalues.cpu()
+                        partitioned_grads = partitioned_grads.cpu()
 
-                thresholds.append(threshold_layer)
+                        del cov_matrix 
+                        del eigenvalues
+                        del partitioned_grads
+
+                    thresholds.append(threshold_layer)
 
         if args.attack == 'modelpoisoning':
             average_grad = []
@@ -470,14 +471,19 @@ if __name__ == '__main__':
                     sizes.append(feature_size - cnt * itv)
 
                 for j in range(len(sizes)):
-                    if args.attack == "variance_diff":
-                        grads[i][:, idx:idx+itv] = corrupt_grads(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[i][j])
-                        idx = idx + itv
-                    elif args.attack == "single_direction":
-                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[i][j], args.attack, args.dataset, args.lr, device, checkpoint_file_name)
-                    elif args.attack == "partial_single_direction":
-                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, thresholds[i][j], args.attack, args.dataset, args.lr, device, checkpoint_file_name)
+                    if args.adaptive_threshold:
+                        threshold = thresholds[i][j]
+                    else:
+                        threshold = args.sigma
 
+                    if args.attack == "variance_diff":
+                        grads[i][:, idx:idx+itv] = corrupt_grads(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
+                    elif args.attack == "single_direction":
+                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device, checkpoint_file_name)
+                    elif args.attack == "partial_single_direction":
+                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device, checkpoint_file_name)
+
+                    idx = idx + itv
             reshaped_grads = [[] for _ in range(len(grads[0]))]
 
             for i in range(len(grads)):
@@ -488,8 +494,10 @@ if __name__ == '__main__':
 
         # aggregation
         average_grad = []
+
         for p in list(network.parameters()):
             average_grad.append(np.zeros(p.data.shape))
+
         if args.agg == 'average':
             print('agg: average')
             s = time.time()
@@ -499,7 +507,8 @@ if __name__ == '__main__':
                     avg_local.append(local_grads[c][idx])
                 avg_local = np.array(avg_local)
                 average_grad[idx] = np.average(avg_local, axis=0)
-            # print('average running time: ', time.time()-s)
+                
+            print('average running time: ', time.time()-s)
         elif args.agg == 'krum':
             print('agg: krum')
             s = time.time()
@@ -516,7 +525,13 @@ if __name__ == '__main__':
                 filterl2_local = []
                 for c in choices:
                     filterl2_local.append(local_grads[c][idx])
-                average_grad[idx] = filterL2(filterl2_local, eps=args.malnum*1./args.nworker, sigma=args.sigma, thresholds=thresholds[idx], device=device, file_name=outlier_file_name)
+
+                if args.adaptive_threshold:
+                    current_thresholds = thresholds[idx]
+                else:
+                    current_thresholds = None
+        
+                average_grad[idx] = filterL2(filterl2_local, eps=args.malnum*1./args.nworker, sigma=args.sigma, thresholds=current_thresholds, device=device, file_name=outlier_file_name)
             # print('filterl2 running time: ', time.time()-s)
         elif args.agg == 'mom_filterl2':
             print('agg: mom_filterl2')

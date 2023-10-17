@@ -156,11 +156,6 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=2, file_name=None):
     points_removed = []
     for i in range(2 * int(eps * size)):
         # print(i)
-        # avg = np.average(samples, axis=0, weights=c)
-        # cov = np.average(np.array([np.matmul((sample - avg).T, (sample - avg)) for sample in samples_]), axis=0, weights=c)
-        # eig_val, eig_vec = eigh(cov, eigvals=(feature_size-1, feature_size-1), eigvals_only=False)
-        # eig_val = eig_val[0]
-        # eig_vec = eig_vec.T[0]
         avg = torch.mean(samples, dim=0)
         cov = torch.cov(samples.T, correction=0)
 
@@ -171,14 +166,13 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=2, file_name=None):
             eigenvalues = eigenvalues.real
             eigenvectors = eigenvectors.real
         
-        eig_val = torch.abs(eigenvalues[0])
-        eig_vec = eigenvectors[:, 0]
-        
-        # avg = avg.cpu().numpy()
-        # samples = samples.cpu().numpy()
-        # eig_vec = eig_vec.cpu().numpy()
+        eigenvalues = torch.abs(eigenvalues)
+        max_eigenvalue_index = torch.argmax(eigenvalues)
 
-        if eig_val.item() <= expansion * sigma :
+        eig_val = eigenvalues[max_eigenvalue_index]
+        eig_vec = eigenvectors[:, max_eigenvalue_index]
+        
+        if eig_val.item() * eig_val.item() <= expansion * sigma * sigma:
             if points_removed:
                 with open(file_name, "a+") as file:
                     file.write(f"{points_removed}\n")
@@ -235,7 +229,12 @@ def filterL2(samples, eps=0.2, sigma=1, expansion=2, itv=ITV, thresholds=None, d
     for i in range(len(sizes)):
         partitioned_samples = torch.tensor(samples_flatten[:,idx:idx+sizes[i]], dtype=torch.float64).to(device)
 
-        res.append(filterL2_(partitioned_samples, eps, thresholds[i], expansion, file_name))
+        if thresholds:
+            threshold = thresholds[i]
+        else:
+            threshold = sigma
+
+        res.append(filterL2_(partitioned_samples, eps, threshold, expansion, file_name))
         idx += sizes[i]
 
         partitioned_samples = partitioned_samples.cpu()

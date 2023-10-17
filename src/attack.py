@@ -505,16 +505,16 @@ def attack_single_direction(grads, corrupted_indices, benign_indices, threshold,
     grads = torch.tensor(grads, dtype=torch.float64).to(device)
     benign_mean = torch.mean(grads, dim=0)
 
+    if torch.norm(benign_mean, p=2) == 0:
+        return grads.cpu().numpy()
+
     s = benign_mean / torch.norm(benign_mean, p=2)
 
-    cov_matrix = torch.cov(grads.T, correction=0)
-    benign_variance = torch.dot(s, torch.mv(cov_matrix, s)).item()
+    # with open(checkpoint_file_name, "a+") as file:
+    #     file.write(f"{threshold}, {benign_variance}, diff: {2* threshold - benign_variance}\n")
+    #     file.close()
 
-    with open(checkpoint_file_name, "a+") as file:
-        file.write(f"{threshold}, {benign_variance}, diff: {2* threshold - benign_variance}\n")
-        file.close()
-
-    variance_diff = max(2 * threshold - benign_variance, threshold)
+    variance_diff = 3 * threshold
 
     corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
     s = s.cpu().numpy()
