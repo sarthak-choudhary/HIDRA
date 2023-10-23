@@ -290,9 +290,9 @@ if __name__ == '__main__':
     if not os.path.exists('./outlier_removal_checkpoints/'):
         os.makedirs('./outlier_removal_checkpoints/')
 
-    file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('adap_thres' if args.adaptive_threshold else '') + '.txt'
-    checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('adap_thres' if args.adaptive_threshold else '') + '.txt'
-    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('adap_thres' if args.adaptive_threshold else '') + '.txt'
+    file_name = './results/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('_adap_thres' if args.adaptive_threshold else '') + '.txt'
+    checkpoint_file_name = './variance_checkpoints/' + args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('_adap_thres' if args.adaptive_threshold else '') + '.txt'
+    outlier_file_name = './outlier_removal_checkpoints/' +  args.attack + '_' + args.agg + '_' + args.dataset + '_' + str(args.malnum) + '_' + str(args.lr) + '_' + str(args.localiter) + ('_adap_thres' if args.adaptive_threshold else '') + '.txt'
     with open(file_name, "w") as file:
         file.write(f"Results : Dataset - {args.dataset}, Learning Rate - {args.lr}, Number of Workers - {args.nworker}, LocalIter - {args.localiter}\n")
         file.close()

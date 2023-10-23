@@ -479,20 +479,16 @@ def partial_attack_single_direction(grads, corrupted_indices, benign_indices, th
 
     eps = num_corruptions / (num_corruptions + num_benign)
 
-    grads = torch.FloatTensor(grads).to(device)
-    benign_mean = torch.mean(grads[corrupted_indices], dim=0)
+    benign_mean = np.mean(grads[corrupted_indices], axis=0)
 
-    s = benign_mean / torch.norm(benign_mean, p=2)
+    if np.linalg.norm(benign_mean) == 0:
+        return grads
 
-    cov_matrix = torch.cov(grads[corrupted_indices].T, correction=0)
-    benign_variance = torch.dot(s, torch.mv(cov_matrix, s)).item()
+    s = benign_mean / np.linalg.norm(benign_mean)
 
-    variance_diff = 2 * threshold - benign_variance
+    variance_diff = 3 * threshold
+
     corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
-    s = s.cpu().numpy()
-    benign_mean = benign_mean.cpu().numpy()
-    grads = grads.cpu().numpy()
-
     grads[corrupted_indices] = benign_mean - s*corruption
     return grads
 
