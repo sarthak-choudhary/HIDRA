@@ -46,10 +46,10 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
     sigma: operator norm of covariance matrix assumption
     """
     size = len(samples)
-    f = int(np.ceil(eps*size))
-    metric = krum_(list(samples), f)
-    indices = np.argpartition(metric, -f)[:-f]
-    samples = samples[indices]
+    # f = int(np.ceil(eps*size))
+    # metric = krum_(list(samples), f)
+    # indices = np.argpartition(metric, -f)[:-f]
+    # samples = samples[indices]
     size = samples.shape[0]
     
     dis_list = []
@@ -178,6 +178,7 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=20, file_name=None):
         c = c * (1 - tau/tau_max)
 
         samples = np.concatenate((samples[:tau_max_idx], samples[tau_max_idx+1:]))
+        points_removed.append(tau_max_idx)
         samples_ = samples.reshape(-1, 1, feature_size)
         c = np.concatenate((c[:tau_max_idx], c[tau_max_idx+1:]))
         c = c / np.linalg.norm(c, ord=1)
