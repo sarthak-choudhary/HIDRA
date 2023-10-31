@@ -578,8 +578,8 @@ if __name__ == '__main__':
                 ex_noregret_local = []
                 for c in choices:
                     ex_noregret_local.append(local_grads[c][idx])
-                average_grad[idx] = ex_noregret(ex_noregret_local, eps=args.malnum*1./args.nworker, sigma=args.sigma)
-            # print('ex_noregret running time: ', time.time()-s)
+                average_grad[idx] = ex_noregret(ex_noregret_local, eps=args.malnum*1./args.nworker, sigma=args.sigma, device=device)
+            print('ex_noregret running time: ', time.time()-s)
         elif args.agg == 'mom_ex_noregret':
             print('agg: mom explicit non-regret')
             s = time.time()

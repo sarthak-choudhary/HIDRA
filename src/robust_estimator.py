@@ -36,6 +36,7 @@ from scipy.linalg import eigh
 from scipy.special import rel_entr
 from sklearn.preprocessing import normalize
 import torch
+from torch.distributions.kl import kl_divergence
 
 MAX_ITER = 100
 ITV = 1000
@@ -53,38 +54,68 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
     size = samples.shape[0]
     
     dis_list = []
+    # for i in range(size):
+    #     for j in range(i+1, size):
+    #         dis_list.append(np.linalg.norm(samples[i]-samples[j]))
+    # step_size = 0.5 / (np.amax(dis_list) ** 2)
+
     for i in range(size):
         for j in range(i+1, size):
-            dis_list.append(np.linalg.norm(samples[i]-samples[j]))
-    step_size = 0.5 / (np.amax(dis_list) ** 2)
+            distance = torch.norm(samples[i] - samples[j])
+            dis_list.append(distance.item())
+
+    dis_list = torch.tensor(dis_list).to(samples.device)
+    step_size = 0.5/(torch.max(dis_list)**2)
+    step_size = step_size.to(samples.device)
+
     size = samples.shape[0]
     feature_size = samples.shape[1]
     samples_ = samples.reshape(size, 1, feature_size)
 
-    c = np.ones(size)
+    # c = np.ones(size)
+    c = torch.ones(size).to(samples.device)
     for i in range(int(2 * eps * size)):
-        avg = np.average(samples, axis=0, weights=c)
-        cov = np.average(np.array([np.matmul((sample - avg).T, (sample - avg)) for sample in samples_]), axis=0, weights=c)
-        eig_val, eig_vec = eigh(cov, eigvals=(feature_size-1, feature_size-1), eigvals_only=False)
-        eig_val = eig_val[0]
-        eig_vec = eig_vec.T[0]
+        # avg = np.average(samples, axis=0, weights=c)
+        # cov = np.average(np.array([np.matmul((sample - avg).T, (sample - avg)) for sample in samples_]), axis=0, weights=c)
+        avg = torch.sum(samples * c[:, None], dim=0) / torch.sum(c)
+        cov = torch.cov(samples.T, correction=0)
 
-        if eig_val * eig_val <= expansion * sigma * sigma:
-            return avg
+        try:
+            eigenvalues, eigenvectors = torch.linalg.eigh(cov, eigenvectors=True)
+        except:
+            eigenvalues, eigenvectors = torch.linalg.eig(cov)
+            eigenvalues = eigenvalues.real
+            eigenvectors = eigenvectors.real
 
-        tau = np.array([np.inner(sample-avg, eig_vec)**2 for sample in samples])
+        eig_val = torch.abs(eigenvalues[0])
+        eig_vec = eigenvectors[:, 0]
+
+        # eig_val, eig_vec = eigh(cov, eigvals=(feature_size-1, feature_size-1), eigvals_only=False)
+        # eig_val = eig_val[0]
+        # eig_vec = eig_vec.T[0]
+
+        if eig_val.item() * eig_val.item() <= expansion * sigma * sigma:
+            return avg.cpu().numpy()
+
+        # tau = np.array([np.inner(sample-avg, eig_vec)**2 for sample in samples])
+        tau = torch.tensor([torch.dot(sample - avg, eig_vec).pow(2) for sample in samples]).to(samples.device)
         c = c * (1 - step_size * tau)
 
         # The projection step
-        ordered_c_index = np.flip(np.argsort(c))
+        ordered_c_index = torch.argsort(c, descending=True)
+        # ordered_c_index = np.flip(np.argsort(c))
         min_KL = None
         projected_c = None
         for i in range(len(c)):
-            c_ = np.copy(c)
+            # c_ = np.copy(c)
+            c_ = c.clone()
             for j in range(i+1):   
                 c_[ordered_c_index[j]] = 1./(1-eps)/len(c)
-            clip_norm = 1 - np.sum(c_[ordered_c_index[:i+1]])
-            norm = np.sum(c_[ordered_c_index[i+1:]])
+            # clip_norm = 1 - np.sum(c_[ordered_c_index[:i+1]])
+            # norm = np.sum(c_[ordered_c_index[i+1:]])
+
+            clip_norm = 1 - torch.sum(c_[ordered_c_index[:i+1]])
+            norm = torch.sum(c_[ordered_c_index[i+1:]])
             if clip_norm <= 0:
                 break
             scale = clip_norm / norm
@@ -92,17 +123,19 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
                 c_[ordered_c_index[j]] = c_[ordered_c_index[j]] * scale
             if c_[ordered_c_index[i+1]] > 1./(1-eps)/len(c):
                 continue
-            KL = np.sum(rel_entr(c, c_))
+            KL = torch.sum(kl_divergence(torch.distributions.Categorical(probs=c), torch.distributions.Categorical(probs=c_)))
+            # KL = np.sum(rel_entr(c, c_))
             if min_KL is None or KL < min_KL:
                 min_KL = KL
                 projected_c = c_
 
         c = projected_c
         
-    avg = np.average(samples, axis=0, weights=c)
-    return avg
+    # avg = np.average(samples, axis=0, weights=c)
+    avg = torch.sum(samples * c[:, None], dim=0) / torch.sum(c)
+    return avg.cpu().numpy()
 
-def ex_noregret(samples, eps=1./12, sigma=1, expansion=20, itv=ITV):
+def ex_noregret(samples, eps=1./12, sigma=1, expansion=20, itv=ITV, device="cpu"):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -128,7 +161,8 @@ def ex_noregret(samples, eps=1./12, sigma=1, expansion=20, itv=ITV):
     cnt = 0
     for size in sizes:
         cnt += 1
-        res.append(ex_noregret_(samples_flatten[:,idx:idx+size], eps, sigma, expansion))
+        partitioned_samples = torch.tensor(samples_flatten[:,idx:idx+size]).to(device)
+        res.append(ex_noregret_(partitioned_samples, eps, sigma, expansion))
         idx += size
 
     return np.concatenate(res, axis=0).reshape(feature_shape)
