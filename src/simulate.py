@@ -264,9 +264,9 @@ if __name__ == '__main__':
                         threshold = args.sigma
 
                     if args.attack == "single_direction":
-                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device)
+                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
                     elif args.attack == "partial_single_direction":
-                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold, args.attack, args.dataset, args.lr, device)
+                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
 
                     idx = idx + itv
             reshaped_grads = [[] for _ in range(len(grads[0]))]

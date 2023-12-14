@@ -140,7 +140,7 @@ def ex_noregret(samples, eps=1./12, sigma=1, expansion=20, itv=ITV, device="cpu"
 
     return np.concatenate(res, axis=0).reshape(feature_shape)
 
-def filterL2_(samples, eps=0.2, sigma=1, expansion=20, file_name=None):
+def filterL2_(samples, eps=0.2, sigma=1, expansion=20):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -164,10 +164,6 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=20, file_name=None):
         eig_vec = eigenvectors[:, max_eigenvalue_index]
 
         if eig_val * eig_val <= expansion * sigma * sigma:
-            if points_removed:
-                with open(file_name, "a+") as file:
-                    file.write(f"{points_removed}\n")
-                    file.close()
             return avg
         
         tau = np.array([np.inner(sample-avg, eig_vec)**2 for sample in samples])
@@ -181,15 +177,11 @@ def filterL2_(samples, eps=0.2, sigma=1, expansion=20, file_name=None):
         c = np.concatenate((c[:tau_max_idx], c[tau_max_idx+1:]))
         c = c / np.linalg.norm(c, ord=1)
             
-    with open(file_name, "a+") as file:
-        file.write(f"{points_removed}\n")
-        file.close()
-
     avg = np.average(samples, axis=0, weights=c)
     return avg
 
  
-def filterL2(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, thresholds=None, device="cpu", file_name = None):
+def filterL2(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, thresholds=None, device="cpu"):
     """
     samples: data samples in numpy array
     sigma: operator norm of covariance matrix assumption
@@ -222,7 +214,7 @@ def filterL2(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, thresholds=None, 
         else:
             threshold = sigma
 
-        res.append(filterL2_(partitioned_samples, eps, threshold, expansion, file_name))
+        res.append(filterL2_(partitioned_samples, eps, threshold, expansion))
         idx += sizes[i]
 
     return np.concatenate(res, axis=0).reshape(feature_shape)
