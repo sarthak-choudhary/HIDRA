@@ -27,14 +27,7 @@
 '''
     Robust estimator for Federated Learning.
 '''
-
-import argparse
-# import cvxpy as cvx
 import numpy as np
-from numpy.random import multivariate_normal
-from scipy.linalg import eigh
-from scipy.special import rel_entr
-from sklearn.preprocessing import normalize
 import torch
 from torch.distributions.kl import kl_divergence
 
@@ -43,21 +36,10 @@ ITV = 1000
 
 def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
     """
-    samples: data samples in numpy array
+    samples: data samples in tensor
     sigma: operator norm of covariance matrix assumption
     """
-    size = len(samples)
-    # f = int(np.ceil(eps*size))
-    # metric = krum_(list(samples), f)
-    # indices = np.argpartition(metric, -f)[:-f]
-    # samples = samples[indices]
-    size = samples.shape[0]
-    
     dis_list = []
-    # for i in range(size):
-    #     for j in range(i+1, size):
-    #         dis_list.append(np.linalg.norm(samples[i]-samples[j]))
-    # step_size = 0.5 / (np.amax(dis_list) ** 2)
 
     for i in range(size):
         for j in range(i+1, size):
@@ -65,7 +47,10 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
             dis_list.append(distance.item())
 
     dis_list = torch.tensor(dis_list).to(samples.device)
-    step_size = 0.5/(torch.max(dis_list)**2)
+    if torch.max(dis_list) != 0:
+        step_size = 0.5/(torch.max(dis_list)**2)
+    else:
+        step_size = torch.tensor(1)
     step_size = step_size.to(samples.device)
 
     size = samples.shape[0]
@@ -75,8 +60,6 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
     # c = np.ones(size)
     c = torch.ones(size).to(samples.device)
     for i in range(int(2 * eps * size)):
-        # avg = np.average(samples, axis=0, weights=c)
-        # cov = np.average(np.array([np.matmul((sample - avg).T, (sample - avg)) for sample in samples_]), axis=0, weights=c)
         avg = torch.sum(samples * c[:, None], dim=0) / torch.sum(c)
         cov = torch.cov(samples.T, correction=0)
 
@@ -90,29 +73,20 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
         eig_val = torch.abs(eigenvalues[0])
         eig_vec = eigenvectors[:, 0]
 
-        # eig_val, eig_vec = eigh(cov, eigvals=(feature_size-1, feature_size-1), eigvals_only=False)
-        # eig_val = eig_val[0]
-        # eig_vec = eig_vec.T[0]
-
         if eig_val.item() * eig_val.item() <= expansion * sigma * sigma:
             return avg.cpu().numpy()
 
-        # tau = np.array([np.inner(sample-avg, eig_vec)**2 for sample in samples])
         tau = torch.tensor([torch.dot(sample - avg, eig_vec).pow(2) for sample in samples]).to(samples.device)
         c = c * (1 - step_size * tau)
 
         # The projection step
         ordered_c_index = torch.argsort(c, descending=True)
-        # ordered_c_index = np.flip(np.argsort(c))
         min_KL = None
         projected_c = None
         for i in range(len(c)):
-            # c_ = np.copy(c)
             c_ = c.clone()
             for j in range(i+1):   
                 c_[ordered_c_index[j]] = 1./(1-eps)/len(c)
-            # clip_norm = 1 - np.sum(c_[ordered_c_index[:i+1]])
-            # norm = np.sum(c_[ordered_c_index[i+1:]])
 
             clip_norm = 1 - torch.sum(c_[ordered_c_index[:i+1]])
             norm = torch.sum(c_[ordered_c_index[i+1:]])
@@ -130,8 +104,7 @@ def ex_noregret_(samples, eps=1./12, sigma=1, expansion=20, dis_threshold=0.7):
                 projected_c = c_
 
         c = projected_c
-        
-    # avg = np.average(samples, axis=0, weights=c)
+
     avg = torch.sum(samples * c[:, None], dim=0) / torch.sum(c)
     return avg.cpu().numpy()
 
@@ -166,15 +139,6 @@ def ex_noregret(samples, eps=1./12, sigma=1, expansion=20, itv=ITV, device="cpu"
         idx += size
 
     return np.concatenate(res, axis=0).reshape(feature_shape)
-
-def mom_ex_noregret(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, delta=np.exp(-30)):
-    bucket_num = int(np.floor(eps * len(samples)) + np.log(1. / delta))
-    bucket_size = int(np.ceil(len(samples) * 1. / bucket_num))
-
-    bucketed_samples = []
-    for i in range(bucket_num):
-        bucketed_samples.append(np.mean(samples[i*bucket_size:min((i+1)*bucket_size, len(samples))], axis=0))
-    return ex_noregret(bucketed_samples, eps, sigma, expansion, itv)
 
 def filterL2_(samples, eps=0.2, sigma=1, expansion=20, file_name=None):
     """
@@ -263,16 +227,6 @@ def filterL2(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, thresholds=None, 
 
     return np.concatenate(res, axis=0).reshape(feature_shape)
 
-def mom_filterL2(samples, eps=0.2, sigma=1, expansion=20, itv=ITV, delta=np.exp(-30)):
-    bucket_num = int(np.floor(eps * len(samples)) + np.log(1. / delta))
-    bucket_size = int(np.ceil(len(samples) * 1. / bucket_num))
-
-    bucketed_samples = []
-    for i in range(bucket_num):
-        bucketed_samples.append(np.mean(samples[i*bucket_size:min((i+1)*bucket_size, len(samples))], axis=0))
-
-    return filterL2(bucketed_samples, eps, sigma, expansion, itv)
-
 def median(samples):
     return np.median(samples, axis=0)
 
@@ -303,14 +257,6 @@ def krum(samples, f):
     metric = krum_(samples, f)
     index = np.argmin(metric)
     return samples[index], index
-
-def mom_krum(samples, f, bucket_size=3):
-    bucket_num = int(np.ceil(len(samples) * 1. / bucket_size))
-
-    bucketed_samples = []
-    for i in range(bucket_num):
-        bucketed_samples.append(np.mean(samples[i*bucket_size:min((i+1)*bucket_size, len(samples))], axis=0))
-    return krum(bucketed_samples, f=f)[0]
 
 def bulyan_median(arr):
     arr_len = len(arr)

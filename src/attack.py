@@ -39,120 +39,6 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms.functional as TF
 
-# Model Poisoning Attack--Training benign model at malicious agent.
-def benign_train(mal_train_loaders, network, criterion, optimizer, params_copy, device):
-    local_grads = []
-    for p in list(network.parameters()):
-        local_grads.append(np.zeros(p.data.shape))
-
-    for idx, (feature, _, target, true_label) in enumerate(mal_train_loaders, 0):
-        feature = feature.to(device)
-        target = target.type(torch.long).to(device)
-        true_label = true_label.type(torch.long).to(device)
-        optimizer.zero_grad()
-        output = network(feature)
-        loss_val = criterion(output, true_label)
-        loss_val.backward()
-        optimizer.step()
-    
-    for idx, p in enumerate(network.parameters()):
-        local_grads[idx] = params_copy[idx].data.cpu().numpy() - p.data.cpu().numpy()
-
-    with torch.no_grad():
-        for idx, p in enumerate(list(network.parameters())):
-            p.copy_(params_copy[idx])
-
-    return local_grads
-
-# Model Poisoning Attack--Return the gradients at previous round.
-def est_accuracy(mal_visible, t, path):
-    delta_other_prev = None
-    if len(mal_visible) >= 1:
-        mal_prev_t = mal_visible[-1]
-        delta_other_prev = np.load('./checkpoints/' + path + 'ben_delta_t%s.npy' % mal_prev_t, allow_pickle=True)
-        delta_other_prev /= (t - mal_prev_t)
-    return delta_other_prev
-
-# Model Poisoning Attack--Compute the weight constrain loss.
-def weight_constrain(loss1, network, constrain_weights, t, device):
-    params = list(network.parameters())
-    loss_fn = nn.MSELoss(size_average=False, reduce=True)
-    start_flag = 0
-
-    for idx in range(len(params)):
-        grad = torch.from_numpy(constrain_weights[idx]).to(device)
-        if start_flag == 0:
-            loss2 = loss_fn(grad, params[idx])
-        else:
-            loss2 += loss_fn(grad, params[idx])
-        start_flag = 1
-    rho = 1e-3
-    loss = loss1 + loss2 * rho
-
-    return loss
-
-# Model Poisoning Attack--The main function for MPA.
-def mal_single(mal_train_loaders, train_loaders, network, criterion, optimizer, params_copy, device, mal_visible, t, dist=True, mal_boost=1, path=None):
-    start_weights = params_copy.copy()
-    constrain_weights = []
-
-    for p in list(network.parameters()):
-        constrain_weights.append(np.zeros(p.data.shape))
-
-    delta_other_prev = est_accuracy(mal_visible, t, path)
-
-    # Add benign estimation
-    if len(mal_visible) >= 1:
-        for idx in range(len(start_weights)):
-            delta_other = torch.from_numpy(delta_other_prev[idx]).to(device)
-            start_weights[idx].data.sub_(delta_other)
-    
-    # Load shared weights for malicious agent
-    with torch.no_grad():
-        for idx, p in enumerate(list(network.parameters())):
-            p.copy_(start_weights[idx])
-
-    final_delta = benign_train(mal_train_loaders, network, criterion, optimizer, start_weights, device)
-    for idx, p in enumerate(start_weights):
-        constrain_weights[idx] = p.data.cpu().numpy() - final_delta[idx] / 10
-
-    delta_mal = []
-    delta_local = []
-    for p in list(network.parameters()):
-        delta_mal.append(np.zeros(p.data.shape))
-        delta_local.append(np.zeros(p.data.shape))
-    
-    for idx, (feature, target) in enumerate(train_loaders, 0):
-        feature = feature.to(device)
-        target = target.type(torch.long).to(device)
-        optimizer.zero_grad()
-        output = network(feature)
-        loss_val = criterion(output, target)
-        loss = weight_constrain(loss_val, network, constrain_weights, t, device)
-        loss.backward()
-        optimizer.step()
-
-    for idx, p in enumerate(list(network.parameters())):
-        delta_local[idx] = params_copy[idx].data.cpu().numpy() - p.data.cpu().numpy()
-
-    for i in range(int(len(train_loaders) / len(mal_train_loaders) + 1)):
-        for idx, (feature, mal_data, _, target) in enumerate(mal_train_loaders, 0):
-            mal_data = mal_data.to(device)
-            target = target.type(torch.long).to(device)
-            output = network(mal_data)
-            loss_mal = criterion(output, target)
-
-            optimizer.zero_grad()
-            loss_mal.backward()
-            optimizer.step()
-
-    # Boost the malicious data gradients.
-    for idx, p in enumerate(list(network.parameters())):
-        delta_mal[idx] = (params_copy[idx].data.cpu().numpy() - p.data.cpu().numpy() - delta_local[idx]) * mal_boost + delta_local[idx]
-
-    return delta_mal
-
-
 # Trimmed Mean Attack--Main function for TMA.
 def attack_trimmedmean(network, local_grads, mal_index, b=2):
     benign_max = []
@@ -307,58 +193,7 @@ def bulyan_attack_krum(network, local_grads, mal_index, param_index, lower_bound
     
     return local_grads
 
-def backdoor(network, train_loader, test_loader, threshold=90, device='cpu', lr=1e-4, batch_size=10):
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(network.parameters(), lr=lr)
-
-    acc = 0.0
-    attack_acc = 0.0
-    while (acc < threshold) or (attack_acc < threshold):
-        for _, (feature, target) in enumerate(train_loader, 0):
-            if np.random.randint(2) == 0:
-                clean_feature = (feature.to(device)).view(-1, 784)
-                clean_target = target.type(torch.long).to(device)
-                optimizer.zero_grad()
-                output = network(clean_feature)
-                loss = criterion(output, clean_target)
-                loss.backward()
-                optimizer.step()
-            else:
-                attack_feature = (TF.erase(feature, 0, 0, 5, 5, 0).to(device)).view(-1, 784)
-                attack_target = torch.zeros(batch_size, dtype=torch.long).to(device)
-                optimizer.zero_grad()
-                output = network(attack_feature)
-                loss = criterion(output, attack_target)
-                loss.backward()
-                optimizer.step()
-
-        correct = 0
-        with torch.no_grad():
-            for feature, target in test_loader:
-                feature = (feature.to(device)).view(-1, 784)
-                target = target.type(torch.long).to(device)
-                output = network(feature)
-                F.nll_loss(output, target, size_average=False).item()
-                pred = output.data.max(1, keepdim=True)[1]
-                correct += pred.eq(target.data.view_as(pred)).sum()
-        acc = 100. * correct / len(test_loader.dataset)
-        print('\nAccuracy: {}/{} ({:.0f}%)\n'.format(correct, len(test_loader.dataset), acc))
-
-        correct = 0
-        # attack success rate
-        with torch.no_grad():
-            for feature, target in test_loader:
-                feature = (TF.erase(feature, 0, 0, 5, 5, 0).to(device)).view(-1, 784)
-                target = torch.zeros(batch_size, dtype=torch.long).to(device)
-                output = network(feature)
-                F.nll_loss(output, target, size_average=False).item()
-                pred = output.data.max(1, keepdim=True)[1]
-                correct += pred.eq(target.data.view_as(pred)).sum()
-        attack_acc = 100. * correct / len(test_loader.dataset)
-        print('\nAttack Success Rate: {}/{} ({:.0f}%)\n'.format(correct, len(test_loader.dataset), attack_acc))
-        print(acc, attack_acc)
-
+# Inner-Product Manipulation Attack--Main function for IMA.
 def attack_xie(local_grads, weight, choices, mal_index):
     attack_vec = []
     for i, pp in enumerate(local_grads[0]):
@@ -371,109 +206,8 @@ def attack_xie(local_grads, weight, choices, mal_index):
         local_grads[i] = attack_vec
     return local_grads
 
-def corrupt_grads(grads, mal_indices, benign_indices, threshold):
-    n = len(mal_indices) + len(benign_indices)
-    cov = np.cov(grads, rowvar=False, bias=True)
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)
-
-    sorted_indices = np.argsort(np.abs(eigenvalues))
-    eigenvectors = eigenvectors[:, sorted_indices]
-
-    proj_grads = np.dot(grads, eigenvectors)
-    inv_transform_matrix = np.linalg.pinv(eigenvectors)
- 
-    for i in range(min(len(mal_indices), grads.shape[1])):
-        var = np.var(proj_grads[:, i])
-        var_diff = threshold  - var
-        if var_diff <= 0:
-            continue
-        corruption = np.sqrt(n) * np.sqrt(var_diff)
-        benign_mean = np.mean(proj_grads[benign_indices, i])
-        if benign_mean >= 0:
-            proj_grads[mal_indices[i], i] = benign_mean - corruption
-        else:
-            proj_grads[mal_indices[i], i] = benign_mean + corruption
-
-        # new_grads = np.dot(proj_grads, inv_transform_matrix)
-        # new_cov = np.cov(new_grads, rowvar=False, bias=True)
-        # new_eigenvalues, new_eigenvectors = np.linalg.eigh(new_cov)
-
-        # new_sorted_indices = np.argsort(np.abs(new_eigenvalues))
-        # new_eigenvectors = new_eigenvectors[:, new_sorted_indices]
-        # new_max_variance = np.var(np.dot(new_grads, new_eigenvectors[:, -1]))
-        # new_max_eigenvector = new_eigenvectors[:, -1]
-
-        # angle = np.dot(new_max_eigenvector, max_eigenvector)
-        # new_mean = np.mean(new_grads, axis=0)
-        # mean_shift = np.linalg.norm(new_mean - benign_grad_mean)
-
-        # with open("corruption_progress.txt", "a") as file:
-        #     file.write(f"corrupted_max_variance: {new_max_variance}, angle: {angle}, mean_shift: {mean_shift} \n")
-        #     file.close()
-
-    inv_transform_matrix = np.linalg.pinv(eigenvectors)
-    grads = np.dot(proj_grads, inv_transform_matrix)
-
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)
-
-    sorted_indices = np.argsort(np.abs(eigenvalues))
-    eigenvectors = eigenvectors[:, sorted_indices]
-    var = np.var(np.dot(grads, eigenvectors[:, -1]))
-
-    if var > 9 * threshold:
-        with open("variance_violation.txt", "a") as file:
-            file.write(f"More than 9 times {var}\n")
-            file.close()        
-    elif var > 2 * threshold:
-        with open("variance_violation.txt", "a") as file:
-            file.write(f"More than 2 times {var}\n")
-            file.close()
-
-    return grads
-
-def attack_variance_diff(grads, corrupted_indices, max_variance):
-    num_corruptions = len(corrupted_indices) * 1.0
-    num_benign = (grads.shape[0] - num_corruptions) * 1.0
-
-    benign_indices = np.setdiff1d(np.arange(grads.shape[0]), corrupted_indices)
-    benign_mean = np.mean(grads[benign_indices])
-    benign_variance = np.var(grads[benign_indices])
-
-    uncorrupted_grads = grads[corrupted_indices]
-    
-    var_to_add = max_variance - benign_variance
-    scale_factor = 3.75
-    corrupted_points = np.random.normal(0, np.sqrt(max(var_to_add * scale_factor, 0)), len(corrupted_indices))
-    for i in range(len(corrupted_indices)):
-        if benign_mean > 0:
-            if corrupted_points[i] > 0:
-                grads[corrupted_indices[i]] = benign_mean - corrupted_points[i]
-            else :
-                grads[corrupted_indices[i]] = benign_mean + corrupted_points[i]
-        else:
-            if corrupted_points[i] > 0:
-                grads[corrupted_indices[i]] = benign_mean + corrupted_points[i]
-            else :
-                grads[corrupted_indices[i]] = benign_mean - corrupted_points[i]
-
-    while np.var(grads) > max_variance and scale_factor > 0:
-        scale_factor -= 0.1
-        corrupted_points = np.random.normal(0, np.sqrt(var_to_add * scale_factor), len(corrupted_indices))
-        for i in range(len(corrupted_indices)):
-            if benign_mean > 0:
-                if corrupted_points[i] > 0:
-                    grads[corrupted_indices[i]] = benign_mean - corrupted_points[i]
-                else :
-                    grads[corrupted_indices[i]] = benign_mean + corrupted_points[i]
-            else:
-                if corrupted_points[i] > 0:
-                    grads[corrupted_indices[i]] = benign_mean + corrupted_points[i]
-                else :
-                    grads[corrupted_indices[i]] = benign_mean - corrupted_points[i]        
-
-    return grads
-
-def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device, checkpoint_file_name):
+# Partial Knowledge HIDRA--Main function for Partial Knowledge HIDRA
+def partial_attack_single_direction(grads, corrupted_indices, benign_indices, threshold):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0
 
@@ -486,13 +220,14 @@ def partial_attack_single_direction(grads, corrupted_indices, benign_indices, th
 
     s = benign_mean / np.linalg.norm(benign_mean)
 
-    variance_diff = 3 * threshold
+    variance_diff = (np.sqrt(20) - 1) * threshold
 
     corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
     grads[corrupted_indices] = benign_mean - s*corruption
     return grads
 
-def attack_single_direction(grads, corrupted_indices, benign_indices, threshold, attack_type, dataset, learning_rate, device, checkpoint_file_name):
+# Full Knowledge HIDRA--Main function for Full Knowledge HIDRA
+def attack_single_direction(grads, corrupted_indices, benign_indices, threshold):
     num_corruptions = len(corrupted_indices) * 1.0
     num_benign = len(benign_indices) * 1.0
     
@@ -505,7 +240,7 @@ def attack_single_direction(grads, corrupted_indices, benign_indices, threshold,
     
     s = benign_mean / np.linalg.norm(benign_mean)
 
-    variance_diff = 3 * threshold
+    variance_diff = (np.sqrt(20) - 1) * threshold
 
     corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
     grads[corrupted_indices] = benign_mean - s*corruption
