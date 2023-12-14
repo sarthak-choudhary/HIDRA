@@ -71,8 +71,8 @@ if __name__ == '__main__':
 
     # Malicious agent setting
     parser.add_argument('--malnum', type=int, default=20)
-    parser.add_argument('--agg', default='average', help='average, ex_noregret, filterl2, krum, median, trimmedmean, bulyankrum, bulyantrimmedmean, bulyanmedian, mom_filterl2, mom_ex_noregret, iclr2022_bucketing, icml2021_history, clustering')
-    parser.add_argument('--attack', default='noattack', help="noattack, trimmedmean, krum, backdoor, modelpoisoning, xie")
+    parser.add_argument('--agg', default='average', help='average, ex_noregret, filterl2, krum, median, trimmedmean, bulyankrum, bulyantrimmedmean, bulyanmedian')
+    parser.add_argument('--attack', default='noattack', help="noattack, single_direction, partial_single_direction, trimmedmean, krum, xie")
     args = parser.parse_args()
 
     device = torch.device("cuda:" + args.device if torch.cuda.is_available() else "cpu") 
@@ -208,7 +208,7 @@ if __name__ == '__main__':
         
         if args.adaptive_threshold:
             thresholds = []
-            if args.agg in ['ex_noregret', 'filterl2'] or args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
+            if args.agg in ['ex_noregret', 'filterl2'] or args.attack in ['single_direction', 'partial_single_direction']:
                 for i in range(len(grads)):
                     feature_size = grads[i].shape[1]
                     cnt = int(feature_size // itv)
