@@ -61,7 +61,7 @@ This is the full list of arguments for the aforementioned command.
 |--batchsize|`int`| batchsize for training at each client|
 |--adaptive_threshold| `-`| add to use adaptive variance threshold for `Filtering` and `No-Regret`|
 
-
+For any inquiries or feedback, feel free to contact - Sarthak Choudhary (csarthak76@gmail.com) or Aashish Kolluri (aashishkolluri6@gmail.com).
 ## Acknowledgement
 
 The code of evaluation of baselines largely reuse [secure-robust-federated-learning](https://github.com/wanglun1996/secure-robust-federated-learning).
