@@ -24,6 +24,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import numpy as np
+
 def clear_progressbar():
     # moves up 3 lines
     print("\033[2A")
@@ -31,6 +33,30 @@ def clear_progressbar():
     print("\033[2K")
     # moves up two lines again
     print("\033[2A")
+
+def power_iteration(grads):
+    rand_vector = np.random.randn(grads.shape[1])
+    rand_vector = rand_vector / np.linalg.norm(rand_vector)
+    
+    num_iterations = 100
+    current_eigenvector = rand_vector
+    mean = np.mean(grads, axis=0)
+    for itr in range(num_iterations):
+        next_eigenvector = np.zeros(current_eigenvector.shape)
+        for i in range(grads.shape[0]):
+            next_eigenvector += np.dot(grads[i] - mean, current_eigenvector) * (grads[i] - mean)
+        
+        next_eigenvector = next_eigenvector/grads.shape[0]
+        next_eigenvector = next_eigenvector/np.linalg.norm(next_eigenvector)
+        current_eigenvector = next_eigenvector
+        
+    print(f"Start Variance: {compute_variance(grads, rand_vector)}   End Variance: {compute_variance(grads, current_eigenvector)}")
+    return current_eigenvector
+
+def compute_variance(grads, proj_vector):
+    projections = [np.dot(grad, proj_vector) for grad in grads]
+    variance = np.var(projections)
+    return variance
 
 class Record(object):
     def __init__(self):
@@ -43,3 +69,4 @@ class Record(object):
 
     def mean(self):
         return self.loss / self.count
+    

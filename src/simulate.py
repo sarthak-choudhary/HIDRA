@@ -46,6 +46,7 @@ from tqdm import tqdm
 import time
 import copy
 import os
+from utils import power_iteration, compute_variance
 
 random.seed(2022)
 np.random.seed(5)
@@ -68,6 +69,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta', type=float, default=0.9)
     parser.add_argument('--tau', type=float, default=10.)
     parser.add_argument('--adaptive_threshold', action='store_true', help="Enabale adaptive threshold")
+    parser.add_argument('--compute_ideal_bias', action='store_true')
 
     # Malicious agent setting
     parser.add_argument('--malnum', type=int, default=20)
@@ -231,8 +233,8 @@ if __name__ == '__main__':
                         idx = idx + itv
 
                     thresholds.append(threshold_layer)
-
-        elif args.attack == 'trimmedmean':
+        
+        if args.attack == 'trimmedmean':
             print('attack trimmedmean')
             local_grads = attack_trimmedmean(network, local_grads, mal_index, b=1.5)
 
@@ -247,35 +249,54 @@ if __name__ == '__main__':
 
 
         if args.attack in ['variance_diff', 'single_direction', 'partial_single_direction']:
-            for i in range(len(grads)):
-                feature_size = grads[i].shape[1]
-                cnt = int(feature_size // itv)
-                idx = 0
-                sizes = []
-                for _ in range(cnt):
-                    sizes.append(itv)
-                if feature_size % itv:
-                    sizes.append(feature_size - cnt * itv)
+            if args.compute_ideal_bias:
+                concatenated_grads = np.concatenate(grads, axis=1)
+                max_eigenvector = power_iteration(concatenated_grads)
+                max_variance = compute_variance(concatenated_grads, max_eigenvector)
+                threshold = 1.1 * max_variance
+                
+                concatenated_grads = attack_single_direction(concatenated_grads, mal_index, benign_index, threshold)
+                start_index = 0
+                for i in range(len(grads)):
+                    grads[i] = concatenated_grads[:, start_index: start_index + grads[i].shape[1]]
+                    start_index = start_index + grads[i].shape[1]
 
-                for j in range(len(sizes)):
-                    if args.adaptive_threshold:
-                        threshold = thresholds[i][j]
-                    else:
-                        threshold = args.sigma
+                reshaped_grads = [[] for _ in range(len(grads[0]))]
+                for i in range(len(grads)):
+                    for j in range(len(grads[i])):
+                        reshaped_grads[j].append(grads[i][j].reshape(local_grads[j][i].shape))
+                
+                local_grads = reshaped_grads
+            else:
+                for i in range(len(grads)):
+                    feature_size = grads[i].shape[1]
+                    cnt = int(feature_size // itv)
+                    idx = 0
+                    sizes = []
+                    for _ in range(cnt):
+                        sizes.append(itv)
+                    if feature_size % itv:
+                        sizes.append(feature_size - cnt * itv)
 
-                    if args.attack == "single_direction":
-                        grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
-                    elif args.attack == "partial_single_direction":
-                        grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
+                    for j in range(len(sizes)):
+                        if args.adaptive_threshold:
+                            threshold = thresholds[i][j]
+                        else:
+                            threshold = args.sigma
 
-                    idx = idx + itv
-            reshaped_grads = [[] for _ in range(len(grads[0]))]
+                        if args.attack == "single_direction":
+                            grads[i][:, idx:idx+itv] = attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
+                        elif args.attack == "partial_single_direction":
+                            grads[i][:, idx:idx+itv] = partial_attack_single_direction(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold)
 
-            for i in range(len(grads)):
-                for j in range(len(grads[i])):
-                    reshaped_grads[j].append(grads[i][j].reshape(local_grads[j][i].shape))
-            
-            local_grads = reshaped_grads
+                        idx = idx + itv
+                reshaped_grads = [[] for _ in range(len(grads[0]))]
+
+                for i in range(len(grads)):
+                    for j in range(len(grads[i])):
+                        reshaped_grads[j].append(grads[i][j].reshape(local_grads[j][i].shape))
+                
+                local_grads = reshaped_grads
 
         # aggregation
         average_grad = []
