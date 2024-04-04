@@ -324,3 +324,43 @@ def bulyan(grads, f, aggsubfunc='trimmedmean'):
         selected_grads_by_cod[i, 0] = bulyan_one_coordinate(np_grads[:, i], beta)
 
     return selected_grads_by_cod.reshape(feature_shape)
+
+def dnc_aggr(samples, niters=1, eps=0.2):
+    n, d = samples.shape
+    inliers = []
+    outliers = []
+    b = d
+
+    for _ in range(niters):
+        random_indices = np.random.permutation(d)[:b]
+        random_indices.sort()
+        sub_samples = samples[:, random_indices]
+        sample_mean = np.mean(sub_samples, axis=0)
+        centered_samples = sub_samples - sample_mean
+
+        cov_matrix = np.cov(samples, rowvar=False, bias=True)
+        eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+
+        max_eigenvalue_index = np.argmax(np.abs(eigenvalues))
+        max_eigenvector = eigenvectors[:, max_eigenvalue_index]
+
+        outlier_scores = []
+
+        for i in range(n):
+            outlier_score = np.dot(centered_samples[i], max_eigenvector)
+            outlier_score = outlier_score * outlier_score
+
+            outlier_scores.append(outlier_score)
+
+        inliers.append(np.argsort(outlier_scores)[:int((1-eps)*n)].tolist())
+        outliers.append(np.argsort(outlier_scores)[int((1-eps)*n):].tolist())
+    
+    set_inliers = [set(inlier) for inlier in inliers]
+
+    inlier_indices = set.intersection(*set_inliers)
+    inlier_indices = list(inlier_indices)
+
+    inlier_samples = samples[inlier_indices, :]
+    inlier_mean = np.mean(inlier_samples, axis=0)
+
+    return inlier_mean, outliers

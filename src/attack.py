@@ -245,3 +245,29 @@ def attack_single_direction(grads, corrupted_indices, benign_indices, threshold)
     corruption  = np.sqrt(1/(eps*eps + (1-eps)*(1-eps)*eps)) * np.sqrt(variance_diff)
     grads[corrupted_indices] = benign_mean - s*corruption
     return grads
+
+# attack against DnC
+def attack_dnc(grads, corrupted_indices, benign_indices, threshold):
+    num_corruptions = len(corrupted_indices) * 1.0
+    num_benign = len(benign_indices) * 1.0
+    beta = 2000
+    c = 0.02
+
+    eps = num_corruptions / (num_corruptions + num_benign)
+    sample_mean = np.mean(grads[benign_indices], axis=0)
+    shifted_grads = grads - sample_mean
+    avg_norm = np.mean(np.linalg.norm(shifted_grads, axis=1))
+    
+    d = grads.shape[1]
+    random_corrupted_direction = np.random.randint(2, size=d)
+    perp_corrupted_direction = 1 - random_corrupted_direction
+    
+    random_corrupted_direction = random_corrupted_direction/np.linalg.norm(random_corrupted_direction)
+    perp_corrupted_direction = perp_corrupted_direction/np.linalg.norm(perp_corrupted_direction)
+
+    grads[corrupted_indices[0]] = sample_mean + beta * avg_norm * random_corrupted_direction
+
+    for ind in corrupted_indices[1:]:
+        grads[ind] = sample_mean + c * beta * avg_norm * perp_corrupted_direction
+
+    return grads   

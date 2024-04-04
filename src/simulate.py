@@ -29,11 +29,11 @@
 '''
 
 import argparse
-from attack import attack_krum, attack_trimmedmean, attack_xie, attack_single_direction, partial_attack_single_direction
+from attack import attack_krum, attack_trimmedmean, attack_xie, attack_single_direction, partial_attack_single_direction, attack_dnc
 from networks import ConvNet
 import numpy as np
 import random
-from robust_estimator import krum, filterL2, median, trimmed_mean, bulyan, ex_noregret
+from robust_estimator import krum, filterL2, median, trimmed_mean, bulyan, ex_noregret, dnc_aggr
 import torch
 from torch.autograd import Variable
 from torch import nn, optim
@@ -233,8 +233,23 @@ if __name__ == '__main__':
                         idx = idx + itv
 
                     thresholds.append(threshold_layer)
-        
-        if args.attack == 'trimmedmean':
+
+        if args.attack == "attack_dnc":
+            print("attacking DnC")
+            for i in range(len(grads)):
+                feature_size = grads[i].shape[1]
+                cnt = int(feature_size // itv)
+                idx = 0
+                sizes = []
+                for _ in range(cnt):
+                    sizes.append(itv)
+                if feature_size % itv:
+                    sizes.append(feature_size - cnt * itv)
+                
+                for j in range(len(sizes)):
+                    grads[i][:, idx:idx+itv] = attack_dnc(grads[i][:, idx:idx+itv], mal_index, benign_index, threshold=0)
+                    idx = idx + itv
+        elif args.attack == 'trimmedmean':
             print('attack trimmedmean')
             local_grads = attack_trimmedmean(network, local_grads, mal_index, b=1.5)
 
@@ -315,6 +330,28 @@ if __name__ == '__main__':
                 average_grad[idx] = np.average(avg_local, axis=0)
                 
             print('average running time: ', time.time()-s)
+        elif args.agg == "dnc":
+            print('agg: dnc')
+            s = time.time()
+
+            for i in range(len(grads)):
+                feature_size = grads[i].shape[1]
+                robust_mean = np.zeros(feature_size)
+                cnt = int(feature_size // itv)
+                idx = 0
+                sizes = []
+                for _ in range(cnt):
+                    sizes.append(itv)
+                if feature_size % itv:
+                    sizes.append(feature_size - cnt * itv)
+                
+                for j in range(len(sizes)):
+                    robust_mean[idx:idx+itv], _ = dnc_aggr(grads[i][:, idx:idx+itv], niters=1, eps=args.malnum*1./args.nworker)
+                    idx = idx + itv
+
+                average_grad[i] = robust_mean.reshape(average_grad[i].shape)
+            
+            print('average running time: ', time.time()-s)        
         elif args.agg == 'krum':
             print('agg: krum')
             s = time.time()
